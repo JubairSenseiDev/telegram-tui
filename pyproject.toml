@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "telegram-sensei-toolkit"
-version = "3.0.0"
+version = "3.2.0"
 description = "A modern Termux-friendly Telegram account management CLI."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
   "telethon>=1.36.0",
   "rich>=13.7.0",

@@ -76,8 +76,21 @@ class TelegramToolkit:
     def ensure_credentials(self) -> bool:
         if self.api_id and self.api_hash:
             return True
-        console.print(Panel("Missing Telegram API credentials. Create .env from .env.example and add TELEGRAM_API_ID and TELEGRAM_API_HASH.", border_style="red"))
+        console.print(Panel("Missing Telegram API credentials. Use menu option 1 to create .env, or copy .env.example manually.", border_style="red"))
         return False
+
+    async def setup_credentials(self) -> None:
+        console.print(Panel("Create Telegram API credentials at https://my.telegram.org/apps, then paste them here.", title="Setup", border_style="cyan"))
+        api_id = console.input("[bold]TELEGRAM_API_ID: [/bold]").strip()
+        api_hash = console.input("[bold]TELEGRAM_API_HASH: [/bold]").strip()
+        if not api_id.isdigit() or not api_hash:
+            console.print("[red]Invalid API ID or hash.[/red]")
+            return
+        env_path = ROOT_DIR / ".env"
+        env_path.write_text(f"TELEGRAM_API_ID={api_id}\nTELEGRAM_API_HASH={api_hash}\n", encoding="utf-8")
+        self.api_id = api_id
+        self.api_hash = api_hash
+        console.print(f"[green]Saved credentials to {env_path}.[/green]")
 
     def save_config(self) -> None:
         if "user_settings" not in self.config:
@@ -214,6 +227,28 @@ class TelegramToolkit:
             await client.send_message(dialogs[choice - 1].entity, message)
             console.print("[green]Reply sent.[/green]")
 
+    async def send_message(self) -> None:
+        client = self.active_client()
+        if not client:
+            return
+        target = console.input("[bold]Username, phone, link, or ID: [/bold]").strip()
+        message = console.input("[bold]Message: [/bold]").strip()
+        if not target or not message:
+            return
+        entity = await client.get_entity(target)
+        await client.send_message(entity, message)
+        console.print("[green]Message sent.[/green]")
+
+    async def save_note(self) -> None:
+        client = self.active_client()
+        if not client:
+            return
+        note = console.input("[bold]Note for Saved Messages: [/bold]").strip()
+        if not note:
+            return
+        await client.send_message("me", note)
+        console.print("[green]Saved to your Telegram Saved Messages.[/green]")
+
     async def export_chat(self) -> None:
         client = self.active_client()
         if not client:
@@ -233,6 +268,55 @@ class TelegramToolkit:
                 handle.write(f"[{message.date:%Y-%m-%d %H:%M}] {sender_name}: {message.text or '[media]'}\n")
                 count += 1
         console.print(f"[green]Exported {count} messages to {filename}.[/green]")
+
+    async def export_dialogs(self) -> None:
+        client = self.active_client()
+        if not client:
+            return
+        limit = prompt_for_int("[bold]Dialogs to export: [/bold]", 100)
+        if limit <= 0:
+            return
+        EXPORT_DIR.mkdir(exist_ok=True)
+        filename = EXPORT_DIR / "dialogs.csv"
+        dialogs = await client.get_dialogs(limit=limit)
+        with filename.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["id", "name", "type", "unread_count", "username"])
+            for dialog in dialogs:
+                entity = dialog.entity
+                username = getattr(entity, "username", "") or ""
+                if dialog.is_user:
+                    dialog_type = "user"
+                elif dialog.is_group:
+                    dialog_type = "group"
+                elif dialog.is_channel:
+                    dialog_type = "channel"
+                else:
+                    dialog_type = "chat"
+                writer.writerow([getattr(entity, "id", ""), dialog.name, dialog_type, dialog.unread_count, username])
+        console.print(f"[green]Exported {len(dialogs)} dialogs to {filename}.[/green]")
+
+    async def search_messages(self) -> None:
+        client = self.active_client()
+        if not client:
+            return
+        target = console.input("[bold]Chat username/link/ID, blank for all dialogs: [/bold]").strip()
+        query = console.input("[bold]Search text: [/bold]").strip()
+        limit = prompt_for_int("[bold]Max results: [/bold]", 25)
+        if not query or limit <= 0:
+            return
+        entity = await client.get_entity(target) if target else None
+        table = Table(title=f"Search results for {escape(query)}")
+        table.add_column("Date")
+        table.add_column("Chat")
+        table.add_column("Message", overflow="fold")
+        count = 0
+        async for message in client.iter_messages(entity, search=query, limit=limit):
+            chat = await message.get_chat()
+            chat_name = getattr(chat, "title", None) or getattr(chat, "first_name", None) or str(getattr(chat, "id", "Unknown"))
+            table.add_row(message.date.strftime("%Y-%m-%d"), escape(chat_name), escape(message.text or "[media]"))
+            count += 1
+        console.print(table if count else "[yellow]No messages found.[/yellow]")
 
     async def export_members(self) -> None:
         client = self.active_client()
@@ -340,6 +424,33 @@ class TelegramToolkit:
             table.add_row(escape(name), f"@{me.username}" if me.username else "N/A", "online" if client.is_connected() else "offline")
         console.print(table)
 
+    async def show_help(self) -> None:
+        table = Table(title="Keyboard And Slash Commands")
+        table.add_column("Key / Command", style="cyan")
+        table.add_column("Action")
+        rows = [
+            ("1, /setup", "Save Telegram API credentials"),
+            ("2, /login", "Login a new Telegram account"),
+            ("3, /inbox", "Open recent chats and read messages"),
+            ("4, /reply", "Reply to a recent chat"),
+            ("5, /send", "Send one message"),
+            ("6, /note", "Save text to Saved Messages"),
+            ("7, /search", "Search messages"),
+            ("8, /dialogs", "Export dialog list"),
+            ("9, /members", "Export group/channel members"),
+            ("10, /chat", "Export chat history"),
+            ("11, /profile", "Edit profile"),
+            ("12, /join", "Join a public group/channel"),
+            ("13, /switch", "Switch active account"),
+            ("14, /delete", "Delete a local session"),
+            ("15, /status", "Show account status"),
+            ("?, /help", "Show this help"),
+            ("q, /quit, 0", "Exit"),
+        ]
+        for key, action in rows:
+            table.add_row(key, action)
+        console.print(table)
+
     async def close(self) -> None:
         for client in self.clients.values():
             if client.is_connected():
@@ -365,44 +476,103 @@ def draw_header(toolkit: TelegramToolkit) -> None:
 
 
 def draw_menu() -> None:
-    menu = """
-1. Check inbox and read messages
-2. Quick reply
-3. Export group/channel members
-4. Export chat history
-5. Manage profile
-6. Join group/channel
-7. Login new account
-8. Switch account
-9. Delete session
-10. Check account status
-0. Exit
-""".strip()
-    console.print(Panel(Align.center(Text("Built for JubairSenseiDev", style="bold cyan")), border_style="magenta"))
-    console.print(Panel(menu, title="Main Menu", border_style="cyan"))
+    actions = Table.grid(padding=(0, 2))
+    actions.add_column(style="bold cyan", justify="right")
+    actions.add_column()
+    actions.add_column(style="bold cyan", justify="right")
+    actions.add_column()
+    rows = [
+        ("1", "Setup", "9", "Members CSV"),
+        ("2", "Login", "10", "Chat Export"),
+        ("3", "Inbox", "11", "Profile"),
+        ("4", "Quick Reply", "12", "Join"),
+        ("5", "Send", "13", "Switch"),
+        ("6", "Saved Note", "14", "Delete"),
+        ("7", "Search", "15", "Status"),
+        ("8", "Dialogs CSV", "0", "Exit"),
+    ]
+    for row in rows:
+        actions.add_row(*row)
+
+    commands = Table.grid(padding=(0, 1))
+    commands.add_column(style="magenta")
+    commands.add_column()
+    for command, label in [
+        ("/home", "redraw dashboard"),
+        ("/inbox", "recent messages"),
+        ("/search", "find messages"),
+        ("/dialogs", "export chats"),
+        ("/members", "export members"),
+        ("?", "help"),
+        ("q", "quit"),
+    ]:
+        commands.add_row(command, label)
+
+    console.print(Panel(Align.center(Text("Telegram Sensei TUI", style="bold cyan")), subtitle="MovieBox-style command palette", border_style="magenta"))
+    console.print(Panel(Group(Panel(actions, title="Tools", border_style="cyan"), Panel(commands, title="Commands", border_style="blue")), title="Dashboard", border_style="cyan"))
+
+
+def command_aliases() -> dict[str, str]:
+    return {
+        "/setup": "1",
+        "/config": "1",
+        "/login": "2",
+        "/inbox": "3",
+        "/home": "home",
+        "/reply": "4",
+        "/send": "5",
+        "/note": "6",
+        "/saved": "6",
+        "/search": "7",
+        "/dialogs": "8",
+        "/chats": "8",
+        "/members": "9",
+        "/chat": "10",
+        "/export": "10",
+        "/profile": "11",
+        "/join": "12",
+        "/switch": "13",
+        "/delete": "14",
+        "/status": "15",
+        "/help": "help",
+        "?": "help",
+        "q": "0",
+        "/quit": "0",
+        "/exit": "0",
+    }
 
 
 async def main() -> None:
     toolkit = TelegramToolkit()
     await toolkit.load_sessions()
     actions = {
-        "1": toolkit.check_inbox,
-        "2": toolkit.quick_reply,
-        "3": toolkit.export_members,
-        "4": toolkit.export_chat,
-        "5": toolkit.manage_profile,
-        "6": toolkit.join_entity,
-        "7": toolkit.login,
-        "8": toolkit.switch_account,
-        "9": toolkit.delete_session,
-        "10": toolkit.account_status,
+        "1": toolkit.setup_credentials,
+        "2": toolkit.login,
+        "3": toolkit.check_inbox,
+        "4": toolkit.quick_reply,
+        "5": toolkit.send_message,
+        "6": toolkit.save_note,
+        "7": toolkit.search_messages,
+        "8": toolkit.export_dialogs,
+        "9": toolkit.export_members,
+        "10": toolkit.export_chat,
+        "11": toolkit.manage_profile,
+        "12": toolkit.join_entity,
+        "13": toolkit.switch_account,
+        "14": toolkit.delete_session,
+        "15": toolkit.account_status,
+        "help": toolkit.show_help,
     }
+    aliases = command_aliases()
     try:
         while True:
             clear_screen()
             draw_header(toolkit)
             draw_menu()
-            choice = console.input("[bold]Select an option > [/bold]").strip()
+            raw_choice = console.input("[bold cyan]command > [/bold cyan]").strip()
+            choice = aliases.get(raw_choice.lower(), raw_choice)
+            if choice == "home":
+                continue
             if choice == "0":
                 break
             action = actions.get(choice)

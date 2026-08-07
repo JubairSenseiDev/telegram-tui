@@ -5,6 +5,7 @@ REPO_URL="https://github.com/JubairSenseiDev/telegram-sensei-toolkit.git"
 APP_DIR="$HOME/telegram-sensei-toolkit"
 
 if command -v pkg >/dev/null 2>&1; then
+  pkg update -y
   pkg install git python -y
 fi
 
