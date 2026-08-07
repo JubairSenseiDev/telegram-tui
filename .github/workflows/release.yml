@@ -33,6 +33,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
       - name: install cross gcc
         if: matrix.deps != ''
         run: |
@@ -60,6 +61,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-gnu
+      - uses: Swatinem/rust-cache@v2
       - name: install mingw
         run: |
           sudo apt-get update
@@ -85,6 +87,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
       - name: build
         run: cargo build --release --target aarch64-apple-darwin
       - name: package
@@ -106,16 +109,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
       - name: install cargo-ndk
         run: cargo install cargo-ndk --locked
       - name: build
         run: |
-          cargo ndk -t arm64-v8a -o dist build --release
-          ls -la dist
+          cargo ndk -t arm64-v8a build --release
+          mkdir -p dist
+          cp target/aarch64-linux-android/release/telegram-tui dist/telegram-tui-aarch64-termux
       - uses: actions/upload-artifact@v4
         with:
           name: telegram-tui-aarch64-termux
-          path: dist/aarch64-linux-android/release/telegram-tui
+          path: dist/telegram-tui-aarch64-termux
 
   release:
     name: publish release
