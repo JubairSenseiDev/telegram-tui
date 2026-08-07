@@ -1,0 +1,145 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    name: linux-${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            package: x86_64-linux
+            linker: ""
+          - target: aarch64-unknown-linux-gnu
+            package: aarch64-linux
+            linker: aarch64-linux-gnu-gcc
+            deps: gcc-aarch64-linux-gnu
+          - target: armv7-unknown-linux-gnueabihf
+            package: armv7-linux
+            linker: arm-linux-gnueabihf-gcc
+            deps: gcc-arm-linux-gnueabihf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: install cross gcc
+        if: matrix.deps != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.deps }}
+      - name: build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER: arm-linux-gnueabihf-gcc
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: package
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/telegram-tui dist/telegram-tui-${{ matrix.package }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: telegram-tui-${{ matrix.package }}
+          path: dist/telegram-tui-${{ matrix.package }}
+
+  windows:
+    name: windows-x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+      - name: install mingw
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64
+      - name: build
+        env:
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+        run: cargo build --release --target x86_64-pc-windows-gnu
+      - name: package
+        run: |
+          mkdir -p dist
+          cp target/x86_64-pc-windows-gnu/release/telegram-tui.exe dist/telegram-tui-x86_64-windows.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: telegram-tui-x86_64-windows
+          path: dist/telegram-tui-x86_64-windows.exe
+
+  macos:
+    name: macos-aarch64
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - name: build
+        run: cargo build --release --target aarch64-apple-darwin
+      - name: package
+        run: |
+          mkdir -p dist
+          cp target/aarch64-apple-darwin/release/telegram-tui dist/telegram-tui-aarch64-macos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: telegram-tui-aarch64-macos
+          path: dist/telegram-tui-aarch64-macos
+
+  termux:
+    name: termux-aarch64
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: build
+        run: |
+          cargo ndk -t arm64-v8a -o dist build --release
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: telegram-tui-aarch64-termux
+          path: dist/aarch64-linux-android/release/telegram-tui
+
+  release:
+    name: publish release
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: sha256sum
+        run: |
+          cd artifacts
+          for f in telegram-tui-*; do
+            if [ -f "$f" ]; then sha256sum "$f" > "$f.sha256"; fi
+          done
+          ls -la
+      - name: tag
+        id: tag
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: telegram-tui ${{ steps.tag.outputs.version }}
+          draft: true
+          files: artifacts/**

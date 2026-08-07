@@ -12,3 +12,7 @@ config.ini
 dist/
 build/
 *.egg-info/
+
+target/
+go/bot/bot
+*.exe

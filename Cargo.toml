@@ -1,0 +1,26 @@
+[package]
+name = "telegram-tui"
+version = "4.0.0"
+edition = "2021"
+description = "A keyboard-first Telegram TUI for Termux and Linux (MovieBox-style)."
+license = "MIT"
+repository = "https://github.com/JubairSenseiDev/telegram-tui"
+keywords = ["telegram", "tui", "termux", "cli", "mtproto"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+ratatui = "0.30"
+crossterm = "0.28"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "io-util"] }
+grammers-client = "0.10"
+grammers-mtsender = "0.10"
+grammers-session = { version = "0.10", default-features = false, features = ["sqlite-storage"] }
+grammers-tl-types = "0.10"
+anyhow = "1"
+chrono = "0.4"
+dotenvy = "0.15"
+dirs = "5"
+
+[profile.release]
+lto = true
+strip = true
