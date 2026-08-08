@@ -34,6 +34,7 @@ Assistant (save posts with little data):
 /removechannel <id> - stop watching a channel
 /listchannels - list watched channels
 /asave - save the replied-to message
+/ashow <id> - copy the full saved text of a post (free, no download)
 /asearch <q> - search the local archive
 /aget <id> - download that post's media to disk
 /astats - archive stats (posts, media, data used)

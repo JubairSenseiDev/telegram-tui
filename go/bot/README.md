@@ -56,6 +56,7 @@ bot has seen (persisted in `data/seen.json`).
 | `/removechannel <id>` | admin | stop watching a channel |
 | `/listchannels` | admin | list watched channels |
 | `/asave` | admin | save the replied-to message |
+| `/ashow <id>` | admin | copy the full saved text of a post (free, no download) |
 | `/asearch <q>` | admin | search the local archive |
 | `/aget <id>` | admin | download that post's media to disk |
 | `/astats` | admin | archive stats (posts, media, data used) |
@@ -71,6 +72,7 @@ actually want them (never by default).
 - **Forward to save** — forward any post into the bot's private chat; it is archived automatically.
 - **`/asave` on a reply** — save a single message in any chat on demand.
 - Saved posts live in `DATA_DIR/assistant_posts.jsonl` (append-only, one post per line). Reading the archive, searching and exporting are **free** — no internet at all.
+- **`/ashow <id>`** shows the full saved text + caption of a post so you can copy it — completely free, no download needed. Only media *bytes* (photos/videos/files) ever require a download (`/aget`).
 - **`/aget <id>`** downloads just that one post's media to `DATA_DIR/assistant/media/` (respects `ASSISTANT_MAX_MEDIA_MB`).
 - Set `ASSISTANT_SAVE_MEDIA=true` to auto-download media under the size cap as posts arrive.
 - **`/aexport`** writes every saved post into a single offline HTML file — the complete archive, readable in any browser with zero data use.

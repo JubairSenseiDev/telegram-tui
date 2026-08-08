@@ -529,6 +529,52 @@ func (a *app) cmdASave(b *gotgbot.Bot, ctx *ext.Context) error {
 	return replyMsg(msg, b, "post saved locally. See /astats.", nil)
 }
 
+func (a *app) cmdAShow(b *gotgbot.Bot, ctx *ext.Context) error {
+	msg := ctx.EffectiveMessage
+	if msg == nil {
+		return nil
+	}
+	if !a.isAdmin(msg.From.Id) {
+		return replyMsg(msg, b, "Only admins can view posts.", nil)
+	}
+	var id int64
+	if _, err := fmt.Sscanf(strings.TrimPrefix(msg.Text, "/ashow"), "%d", &id); err != nil {
+		return replyMsg(msg, b, "Usage: /ashow <post id>", nil)
+	}
+	a.mu.Lock()
+	var p *savedPost
+	for i := range a.posts {
+		if a.posts[i].ID == id {
+			p = &a.posts[i]
+			break
+		}
+	}
+	a.mu.Unlock()
+	if p == nil {
+		return replyMsg(msg, b, fmt.Sprintf("no post #%d.", id), nil)
+	}
+	media := ""
+	if p.MediaType != "" {
+		status := "not downloaded"
+		if p.MediaSaved {
+			status = p.MediaPath
+		}
+		media = fmt.Sprintf("[%s · %s · %s]\n", p.MediaType, humanSize(p.FileSize), status)
+	}
+	date := time.Unix(p.Date, 0).Format("2006-01-02 15:04")
+	header := fmt.Sprintf("#%d · %s · %s\n%s%s", p.ID, date, p.ChatTitle, media, p.SourceLink)
+	body := p.body()
+	if body == "" {
+		body = "(no text)"
+	}
+	text := header + "\n\n" + body
+	const max = 3900
+	if len(text) > max {
+		text = text[:max] + "\n…(truncated)"
+	}
+	return replyMsg(msg, b, text, nil)
+}
+
 func (a *app) cmdAGet(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 	if msg == nil {
