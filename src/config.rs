@@ -76,6 +76,23 @@ impl Config {
         exports
     }
 
+    pub fn downloads_dir(&self) -> PathBuf {
+        let downloads = self.dir.join("downloads");
+        fs::create_dir_all(&downloads).ok();
+        downloads
+    }
+
+    pub fn list_downloads(&self) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        if let Ok(read) = fs::read_dir(self.downloads_dir()) {
+            for entry in read.flatten() {
+                out.push(entry.path());
+            }
+        }
+        out.sort();
+        out
+    }
+
     pub fn list_exports(&self) -> Vec<PathBuf> {
         let mut out = Vec::new();
         if let Ok(read) = fs::read_dir(self.exports_dir()) {

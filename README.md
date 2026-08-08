@@ -16,6 +16,7 @@ No TDLib, no GUI, no browser. Pure MTProto over the terminal.
 - 🖥️ **Full TUI** — dashboard, dialogs, chat, search, profile, exports
 - 👥 **Multi-account** — login, switch and delete sessions
 - 📨 **Messaging** — send, reply, edit, delete, pin, send files
+- ⬇️ **Private downloads** — download videos / photos / media from any chat, group or channel (including **private** ones you're a member of) with `g` or `/download`
 - 🔎 **Search** — global search + in-chat search
 - 📦 **Exports** — chats, dialogs and members to CSV/text
 - 🐍 **Python tools** — export summaries & chat stats (stdlib only)
@@ -47,7 +48,7 @@ install -m755 target/release/telegram-tui ~/.local/bin/telegram-tui
 1. Create an app at [my.telegram.org/apps](https://my.telegram.org/apps)
 2. Run the TUI, then use `/setup` and paste your `api_id` / `api_hash`
 
-> Credentials live in `~/.config/telegram-tui/.env` (mode `600`). Sessions → `sessions/`, exports → `exports/`.
+> Credentials live in `~/.config/telegram-tui/.env` (mode `600`). Sessions → `sessions/`, exports → `exports/`, downloads → `downloads/`.
 
 ---
 
@@ -62,6 +63,7 @@ install -m755 target/release/telegram-tui ~/.local/bin/telegram-tui
 | `/sendfile` | Upload and send a file |
 | `/note` | Save text to Saved Messages |
 | `/search` | Search messages |
+| `/download` | Download media from a `t.me/...` message link |
 | `/join` | Join a public group/channel |
 | `/accounts` | Switch / delete sessions |
 | `/exports` | List exported files |
@@ -85,6 +87,7 @@ install -m755 target/release/telegram-tui ~/.local/bin/telegram-tui
 | `E` | Edit message |
 | `p` / `P` | Pin / unpin |
 | `v` | Members |
+| `g` | Download media of the selected message |
 | `M` | Mark read |
 | `R` | Refresh |
 

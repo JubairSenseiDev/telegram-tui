@@ -44,6 +44,7 @@ pub enum PromptKind {
     EditMessage,
     SendFileTarget,
     SendFilePath,
+    DownloadLink,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -69,6 +70,7 @@ pub enum Outcome {
     Search(Vec<MsgItem>),
     PeerResolved(Peer),
     FilePeerResolved(Peer),
+    Downloaded(String),
     Connected(ConnectedSession, String),
     LoginCode(Result<LoginToken, String>),
     CodeDone(Result<Result<Me, PasswordToken>, String>),
@@ -107,6 +109,7 @@ pub struct App {
     pub login_password_token: Option<PasswordToken>,
     pub setup_stage: SetupStage,
     pub exports: Vec<std::path::PathBuf>,
+    pub downloads: Vec<std::path::PathBuf>,
     pub pending: Option<oneshot::Receiver<Outcome>>,
     pub quit: bool,
 }
@@ -123,6 +126,7 @@ pub const DASHBOARD_ITEMS: &[(&str, &str)] = &[
     ("/chat", "Export chat history"),
     ("/profile", "View profile"),
     ("/join", "Join group/channel"),
+    ("/download", "Download media from a link"),
     ("/accounts", "Accounts"),
     ("/exports", "Exported files"),
     ("/help", "Help"),
@@ -169,6 +173,7 @@ impl App {
             login_password_token: None,
             setup_stage: SetupStage::ApiId,
             exports: Vec::new(),
+            downloads: Vec::new(),
             pending: None,
             quit: false,
         })
@@ -249,6 +254,10 @@ impl App {
             Outcome::FilePeerResolved(peer) => {
                 self.send_peer = Some(peer);
                 self.start_prompt(PromptKind::SendFilePath, "File path to upload");
+            }
+            Outcome::Downloaded(path) => {
+                self.toast = Some(format!("saved -> {}", path));
+                self.mode = self.mode_before_busy;
             }
             Outcome::Connected(sess, name) => {
                 let me = sess.me.clone();
@@ -478,6 +487,7 @@ impl App {
             KeyCode::Char('v') => self.load_members(),
             KeyCode::Char('e') => self.export_current_chat(),
             KeyCode::Char('m') => self.export_current_members(),
+            KeyCode::Char('g') => self.download_selected_media(),
             _ => {}
         }
     }
@@ -642,8 +652,13 @@ impl App {
                 self.refresh_sessions();
                 self.mode = Mode::Accounts;
             }
+            "/download" | "4" => self.start_prompt(
+                PromptKind::DownloadLink,
+                "Message link (t.me/... or t.me/c/.../msg)",
+            ),
             "/exports" => {
                 self.exports = self.cfg.list_exports();
+                self.downloads = self.cfg.list_downloads();
                 self.mode = Mode::Exports;
             }
             _ => {
@@ -820,6 +835,26 @@ impl App {
 
     fn export_current_chat(&mut self) {
         self.export_selected_chat();
+    }
+
+    fn download_selected_media(&mut self) {
+        let Some(peer) = self.current_peer() else {
+            return;
+        };
+        let Some(id) = self.selected_msg_id() else {
+            return;
+        };
+        let Some(client) = self.tg.client.clone() else {
+            self.toast = Some("not connected; use /login first".to_string());
+            return;
+        };
+        let dir = self.cfg.downloads_dir();
+        self.spawn("Downloading media", async move {
+            match tg::download_selected_media(&client, &peer, id, &dir).await {
+                Ok(path) => Outcome::Downloaded(path),
+                Err(e) => Outcome::Error(e.to_string()),
+            }
+        });
     }
 
     fn export_current_members(&mut self) {
@@ -1247,6 +1282,24 @@ impl App {
                             Ok(list) => Outcome::Messages(list),
                             Err(e) => Outcome::Error(e.to_string()),
                         },
+                        Err(e) => Outcome::Error(e.to_string()),
+                    }
+                });
+            }
+            PromptKind::DownloadLink => {
+                if text.is_empty() {
+                    self.mode = self.mode_before_busy;
+                    return;
+                }
+                let Some(client) = self.tg.client.clone() else {
+                    self.toast = Some("not connected".to_string());
+                    self.mode = self.mode_before_busy;
+                    return;
+                };
+                let dir = self.cfg.downloads_dir();
+                self.spawn("Downloading media", async move {
+                    match tg::download_from_link(&client, &text, &dir).await {
+                        Ok(path) => Outcome::Downloaded(path),
                         Err(e) => Outcome::Error(e.to_string()),
                     }
                 });

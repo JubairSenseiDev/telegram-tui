@@ -241,6 +241,7 @@ fn view_help(f: &mut ratatui::Frame) {
         "  E            edit selected message",
         "  p / P        pin / unpin selected message",
         "  v            view members of this chat",
+        "  g            download media of selected message",
         "  M            mark chat as read",
         "  R            refresh chat",
         "Members",
@@ -255,7 +256,7 @@ fn view_help(f: &mut ratatui::Frame) {
         "  l            login a new account",
         "  d            delete selected session (type DELETE to confirm)",
         "Commands      /setup /login /inbox /send /sendfile /note /search",
-        "              /dialogs /members /chat /profile /join",
+        "              /dialogs /members /chat /profile /join /download",
         "              /accounts /exports /help /quit",
         "",
         "Press Esc to return.",
@@ -332,26 +333,40 @@ fn view_profile(f: &mut ratatui::Frame, app: &mut App) {
 }
 
 fn view_exports(f: &mut ratatui::Frame, app: &mut App) {
-    let items: Vec<ListItem> = if app.exports.is_empty() {
-        vec![ListItem::new("no exported files yet")]
+    let mut items: Vec<ListItem> = Vec::new();
+    items.push(ListItem::new(line(
+        format!("DOWNLOADS — {}", app.cfg.downloads_dir().to_string_lossy()),
+        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+    )));
+    if app.downloads.is_empty() {
+        items.push(ListItem::new("  no downloads yet"));
     } else {
-        app.exports
-            .iter()
-            .map(|p| {
-                ListItem::new(line(
-                    p.to_string_lossy().to_string(),
-                    Style::default().fg(Color::White),
-                ))
-            })
-            .collect()
-    };
+        for p in &app.downloads {
+            items.push(ListItem::new(line(
+                format!("  {}", p.to_string_lossy()),
+                Style::default().fg(Color::White),
+            )));
+        }
+    }
+    items.push(ListItem::new(""));
+    items.push(ListItem::new(line(
+        format!("EXPORTS — {}", app.cfg.exports_dir().to_string_lossy()),
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+    )));
+    if app.exports.is_empty() {
+        items.push(ListItem::new("  no exported files yet"));
+    } else {
+        for p in &app.exports {
+            items.push(ListItem::new(line(
+                format!("  {}", p.to_string_lossy()),
+                Style::default().fg(Color::White),
+            )));
+        }
+    }
     f.render_widget(
         List::new(items)
             .block(content(
-                format!(
-                    "EXPORTS — {}",
-                    app.cfg.exports_dir().to_string_lossy()
-                ),
+                "FILES".to_string(),
                 Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
             ))
             .highlight_style(Style::default()),
@@ -457,7 +472,7 @@ fn view_chat(f: &mut ratatui::Frame, app: &mut App) {
         " ".to_string()
     };
     let hint = Paragraph::new(format!(
-        "j/k scroll | s send | r reply | e export chat | m members | Home/End | Esc back{}",
+        "j/k scroll | s send | r reply | e export chat | m members | g download | Home/End | Esc back{}",
         pos
     ))
     .style(Style::default().fg(Color::DarkGray));
@@ -720,6 +735,7 @@ fn view_prompt(f: &mut ratatui::Frame, app: &mut App) {
                 PromptKind::EditMessage => "EDIT MESSAGE",
                 PromptKind::SendFileTarget => "SEND FILE",
                 PromptKind::SendFilePath => "SEND FILE",
+                PromptKind::DownloadLink => "DOWNLOAD",
                 PromptKind::None => "PROMPT",
             },
             app.prompt_title
