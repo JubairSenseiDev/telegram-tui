@@ -16,6 +16,10 @@ func (a *app) onMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 		return nil
 	}
 
+	if msg.From != nil {
+		a.recordSeen(msg.From.Id, msg.Chat.Id, msg.From.FirstName, msg.From.Username)
+	}
+
 	a.greetNewMembers(b, msg)
 
 	// keyword auto-reply

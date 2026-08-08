@@ -20,6 +20,19 @@ export DATA_DIR="data"                     # optional: state directory (default:
 go run .
 ```
 
+## Get all user IDs from a bot token
+
+One-shot mode — reads the bot's pending updates and prints every user and
+chat ID it finds, then exits. Use it to discover `ADMIN_USER_IDS`,
+`SOURCE_CHAT_ID`, `TARGET_CHAT_ID`, etc.:
+
+```sh
+TELEGRAM_BOT_TOKEN="123:abc" go run . --getids
+```
+
+While running, the `/ids` admin command also lists every user & chat ID the
+bot has seen (persisted in `data/seen.json`).
+
 ## Commands
 
 | Command | Who | Action |
@@ -30,6 +43,7 @@ go run .
 | `/subcount` | all | number of subscribers |
 | `/broadcast <text>` | admin | send a message to every subscriber |
 | `/list` | admin | list subscribers |
+| `/ids` | admin | list every user & chat ID the bot has seen |
 | `/addkeyword <word>\|<reply>` | admin | add a keyword auto-reply |
 | `/delkeyword <word>` | admin | remove a keyword auto-reply |
 | `/keywords` | admin | list keyword auto-replies |

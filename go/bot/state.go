@@ -29,6 +29,15 @@ type scheduleItem struct {
 	Last     int64  `json:"last"`
 }
 
+type seenChat struct {
+	ID        int64  `json:"id"`
+	ChatID    int64  `json:"chat_id"`
+	Name      string `json:"name"`
+	Username  string `json:"username"`
+	FirstSeen int64  `json:"first_seen"`
+	LastSeen  int64  `json:"last_seen"`
+}
+
 type app struct {
 	bot *gotgbot.Bot
 	cfg config
@@ -37,6 +46,7 @@ type app struct {
 	subscribers []subscriber
 	keywords    map[string]string
 	schedules   []scheduleItem
+	seen        map[int64]seenChat
 	nextID      int64
 }
 
@@ -48,6 +58,7 @@ func newApp(cfg config) (*app, error) {
 		cfg:         cfg,
 		keywords:    map[string]string{},
 		subscribers: []subscriber{},
+		seen:        map[int64]seenChat{},
 	}
 	if err := a.load(); err != nil {
 		return nil, err
@@ -63,6 +74,7 @@ func (a *app) load() error {
 	a.subscribers = loadJSON[[]subscriber](a.path("subscribers.json"), a.subscribers)
 	a.keywords = loadJSON[map[string]string](a.path("keywords.json"), a.keywords)
 	a.schedules = loadJSON[[]scheduleItem](a.path("schedules.json"), a.schedules)
+	a.seen = loadJSON[map[int64]seenChat](a.path("seen.json"), a.seen)
 	for _, s := range a.schedules {
 		if s.ID >= a.nextID {
 			a.nextID = s.ID + 1
@@ -102,6 +114,7 @@ func (a *app) saveAll() {
 	_ = a.save("subscribers.json", a.subscribers)
 	_ = a.save("keywords.json", a.keywords)
 	_ = a.save("schedules.json", a.schedules)
+	_ = a.save("seen.json", a.seen)
 }
 
 func (a *app) isAdmin(userID int64) bool {
@@ -133,5 +146,41 @@ func (a *app) sortedSubscribers() []subscriber {
 	defer a.mu.Unlock()
 	out := append([]subscriber(nil), a.subscribers...)
 	sort.Slice(out, func(i, j int) bool { return out[i].Added < out[j].Added })
+	return out
+}
+
+// recordSeen remembers every user/chat that ever contacts the bot.
+func (a *app) recordSeen(uid, chatID int64, name, username string) {
+	if uid == 0 {
+		return
+	}
+	now := time.Now().Unix()
+	a.mu.Lock()
+	sc, ok := a.seen[uid]
+	if !ok {
+		sc = seenChat{ID: uid, ChatID: chatID, FirstSeen: now}
+	}
+	sc.LastSeen = now
+	if chatID != 0 {
+		sc.ChatID = chatID
+	}
+	if name != "" {
+		sc.Name = name
+	}
+	if username != "" {
+		sc.Username = username
+	}
+	a.seen[uid] = sc
+	a.mu.Unlock()
+}
+
+func (a *app) sortedSeen() []seenChat {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	out := make([]seenChat, 0, len(a.seen))
+	for _, sc := range a.seen {
+		out = append(out, sc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].FirstSeen < out[j].FirstSeen })
 	return out
 }

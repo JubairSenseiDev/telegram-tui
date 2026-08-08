@@ -47,10 +47,57 @@ func parseChatID(s string) int64 {
 	return id
 }
 
+func hasArg(name string) bool {
+	for _, a := range os.Args[1:] {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
+// dumpIDs prints every user and chat ID found in the bot's pending updates,
+// then exits. Useful for discovering IDs before configuring the bot.
+func dumpIDs(token string) {
+	bot, err := gotgbot.NewBot(token, nil)
+	if err != nil {
+		log.Fatalf("create bot: %v", err)
+	}
+	updates, err := bot.GetUpdates(&gotgbot.GetUpdatesOpts{Limit: 100})
+	if err != nil {
+		log.Fatalf("get updates: %v", err)
+	}
+	users := map[int64]string{}
+	chats := map[int64]string{}
+	for _, u := range updates {
+		if u.Message != nil {
+			if u.Message.From != nil {
+				users[u.Message.From.Id] = u.Message.From.FirstName
+			}
+			if u.Message.Chat.Id != 0 {
+				chats[u.Message.Chat.Id] = u.Message.Chat.Type
+			}
+		}
+	}
+	fmt.Println("users:")
+	for id, name := range users {
+		fmt.Printf("  %d  %s\n", id, name)
+	}
+	fmt.Println("chats:")
+	for id, typ := range chats {
+		fmt.Printf("  %d  %s\n", id, typ)
+	}
+}
+
 func main() {
 	token := strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
 	if token == "" {
 		log.Fatal("TELEGRAM_BOT_TOKEN is required")
+	}
+
+	if hasArg("--getids") {
+		dumpIDs(token)
+		return
 	}
 
 	cfg := config{
@@ -87,6 +134,7 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("subcount", app.cmdSubCount))
 	dispatcher.AddHandler(handlers.NewCommand("broadcast", app.cmdBroadcast))
 	dispatcher.AddHandler(handlers.NewCommand("list", app.cmdList))
+	dispatcher.AddHandler(handlers.NewCommand("ids", app.cmdIds))
 	dispatcher.AddHandler(handlers.NewCommand("addkeyword", app.cmdAddKeyword))
 	dispatcher.AddHandler(handlers.NewCommand("delkeyword", app.cmdDelKeyword))
 	dispatcher.AddHandler(handlers.NewCommand("keywords", app.cmdKeywords))

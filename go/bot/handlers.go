@@ -21,6 +21,7 @@ General:
 Admin:
 /broadcast <text> - send to all subscribers
 /list - list subscribers
+/ids - list all known user & chat IDs
 /addkeyword <word>|<reply> - add keyword auto-reply
 /delkeyword <word> - remove keyword auto-reply
 /keywords - list keyword auto-replies
@@ -114,6 +115,34 @@ func (a *app) cmdList(b *gotgbot.Bot, ctx *ext.Context) error {
 			name = "?"
 		}
 		fmt.Fprintf(&sb, "• %s (@%s) id=%d\n", name, s.Username, s.ID)
+	}
+	return replyMsg(msg, b, strings.TrimSuffix(sb.String(), "\n"), nil)
+}
+
+func (a *app) cmdIds(b *gotgbot.Bot, ctx *ext.Context) error {
+	msg := ctx.EffectiveMessage
+	if msg == nil {
+		return nil
+	}
+	if !a.isAdmin(msg.From.Id) {
+		return replyMsg(msg, b, "Only admins can list IDs.", nil)
+	}
+	seen := a.sortedSeen()
+	if len(seen) == 0 {
+		return replyMsg(msg, b, "no users seen yet.", nil)
+	}
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("known users (%d):\n", len(seen)))
+	for _, sc := range seen {
+		name := sc.Name
+		if name == "" {
+			name = "?"
+		}
+		uname := sc.Username
+		if uname == "" {
+			uname = "-"
+		}
+		fmt.Fprintf(&sb, "id=%d | chat=%d | @%s | %s\n", sc.ID, sc.ChatID, uname, name)
 	}
 	return replyMsg(msg, b, strings.TrimSuffix(sb.String(), "\n"), nil)
 }
