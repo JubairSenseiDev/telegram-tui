@@ -232,7 +232,7 @@ impl App {
                     self.toast = Some("no older messages".to_string());
                 } else {
                     let mut older = list;
-                    older.extend(self.messages.drain(..));
+                    older.append(&mut self.messages);
                     self.messages = older;
                     self.msg_oldest_id = self.messages.first().map(|m| m.id);
                 }
@@ -354,10 +354,11 @@ impl App {
         match self.mode {
             Mode::Busy => {}
             Mode::Dashboard => self.key_dashboard(key),
-            Mode::Help | Mode::Profile | Mode::Exports => match key.code {
-                KeyCode::Esc => self.mode = Mode::Dashboard,
-                _ => {}
-            },
+            Mode::Help | Mode::Profile | Mode::Exports => {
+                if key.code == KeyCode::Esc {
+                    self.mode = Mode::Dashboard;
+                }
+            }
             Mode::SearchResults => self.key_scroll_escape(key),
             Mode::Members => self.key_members(key),
             Mode::Dialogs => self.key_dialogs(key),
@@ -613,7 +614,7 @@ impl App {
         let cmd = raw.trim().to_lowercase();
         self.input.clear();
         match cmd.as_str() {
-            "" => return,
+            "" => {}
             "0" | "q" | "/quit" | "/exit" | "quit" => {
                 self.quit = true;
             }
@@ -935,7 +936,7 @@ impl App {
                     self.mode = Mode::Dashboard;
                     return;
                 };
-                let clean = phone.replace('+', "").replace(' ', "");
+                let clean: String = phone.chars().filter(|c| *c != '+' && *c != ' ').collect();
                 let path = self.cfg.session_path(&clean);
                 self.spawn("Connecting", async move {
                     match tg::connect_session(&path, api_id).await {
