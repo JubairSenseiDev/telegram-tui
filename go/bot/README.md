@@ -1,6 +1,6 @@
 # 🤖 telegram-tui Go bot
 
-A real Telegram bot service: **broadcasts**, **channel mirroring**, **keyword auto-replies**, **scheduled messages** and a **low-data post-saver assistant**. State is kept in JSON files, so the bot survives restarts.
+A real Telegram bot service: **broadcasts**, **channel mirroring**, **keyword auto-replies**, **scheduled messages** and a **grab-and-share assistant**. State is kept in JSON files, so the bot survives restarts.
 
 ## Configure
 
@@ -55,29 +55,21 @@ bot has seen (persisted in `data/seen.json`).
 | `/addchannel <id>\|<@user>\|<t.me/...>` | admin | watch a channel/group, archive every post locally |
 | `/removechannel <id>` | admin | stop watching a channel |
 | `/listchannels` | admin | list watched channels |
-| `/asave` | admin | save the replied-to message |
-| `/ashow <id>` | admin | copy the full saved text of a post (free, no download) |
-| `/afwd <id> [target]` | admin | forward a saved post to a chat — **no download, full media included** (`/acopy` = same) |
-| `/asearch <q>` | admin | search the local archive |
-| `/aget <id>` | admin | download that post's media to disk |
-| `/astats` | admin | archive stats (posts, media, data used) |
-| `/aexport` | admin | write all posts to one offline HTML file |
+| `/getpost <t.me/...> [target]` | admin | copy a post straight from a t.me link into a chat |
+| `/afwd <id> [target]` | admin | forward a saved post to a chat — **no download, full media included** |
 
-## Assistant — save posts with little data
+## Assistant — grab & share posts, no download
 
-The assistant archives the **full text + caption + media info** of every post,
-instantly, using almost no internet. Media *bytes* are only downloaded when you
-actually want them (never by default).
+The assistant keeps a local **index of every watched post** (text, caption,
+media info, link) in `DATA_DIR/assistant_posts.jsonl` (append-only, one post
+per line). Sharing is done **server-side** — Telegram copies or forwards the
+post's own copy, so even huge media moves **instantly with zero download**.
 
-- **Watch channels** — `/addchannel` a public or private channel you own/admin (add the bot as a channel admin so it receives posts). Every new post is saved locally.
-- **Forward to save** — forward any post into the bot's private chat; it is archived automatically.
-- **`/asave` on a reply** — save a single message in any chat on demand.
-- Saved posts live in `DATA_DIR/assistant_posts.jsonl` (append-only, one post per line). Reading the archive, searching and exporting are **free** — no internet at all.
-- **`/ashow <id>`** shows the full saved text + caption of a post so you can copy it — completely free, no download needed. Only media *bytes* (photos/videos/files) ever require a download (`/aget`).
-- **`/afwd <id> [target]`** shares the post into any chat/channel by *forwarding* — Telegram reuses its own copy server-side, so even huge posts move **instantly with zero download**. Run it in the target chat (or pass a target id/`@username`). Use `/afwd <id>` for a single post; `/acopy` is an alias.
-- **`/aget <id>`** downloads just that one post's media to `DATA_DIR/assistant/media/` (respects `ASSISTANT_MAX_MEDIA_MB`) — only needed if you truly want the file bytes on disk.
-- Set `ASSISTANT_SAVE_MEDIA=true` to auto-download media under the size cap as posts arrive.
-- **`/aexport`** writes every saved post into a single offline HTML file — the complete archive, readable in any browser with zero data use.
+- **Watch channels** — `/addchannel` a public or private channel you own/admin (add the bot as a channel admin so it receives posts). Every new post is archived locally.
+- **`/getpost <link> [target]`** — paste any `t.me/...` post link (e.g. `t.me/c/1550117445/42`) and the bot copies that post into the current chat (or `target`). Text-only posts stay free; media is copied server-side too.
+- **`/afwd <id> [target]`** — share an archived post by *forwarding*. Run it in the target chat (or pass a target id/`@username`). Telegram reuses its own copy server-side — instant, no download.
+- **`/addchannel` / `/removechannel` / `/listchannels`** — manage which channels get archived automatically.
+- Media *bytes* are only downloaded to `DATA_DIR/assistant/media/` if you set `ASSISTANT_SAVE_MEDIA=true` (capped by `ASSISTANT_MAX_MEDIA_MB`, default 50).
 
 ## Automation (no commands needed)
 

@@ -29,17 +29,12 @@ Admin:
 /schedules - list schedules
 /scheduledel <id> - delete a schedule
 
-Assistant (save posts with little data):
+Assistant (grab & share posts, no download):
+/getpost <link> [target] - copy a post from a t.me/... link into a chat
+/afwd <id> [target] - forward a saved post to a chat
 /addchannel <id|@user|t.me link> - watch a channel/group, archive every post
 /removechannel <id> - stop watching a channel
-/listchannels - list watched channels
-/asave - save the replied-to message
-/ashow <id> - copy the full saved text of a post (free, no download)
-/afwd <id> [target] - forward a saved post to a chat (no download, instant)
-/asearch <q> - search the local archive
-/aget <id> - download that post's media to disk
-/astats - archive stats (posts, media, data used)
-/aexport - write all posts to one offline HTML file`
+/listchannels - list watched channels`
 
 // replyMsg is a helper wrapping Message.Reply, discarding the sent Message.
 func replyMsg(msg *gotgbot.Message, b *gotgbot.Bot, text string, opts *gotgbot.SendMessageOpts) error {

@@ -25,8 +25,8 @@ type watchedChannel struct {
 	AddedAt int64  `json:"added_at"`
 }
 
-// savedPost is one fully-saved post. Text/captions are always stored (tiny);
-// media bytes are only downloaded when SAVE_MEDIA is on or via /aget.
+// savedPost is one saved post. Text/captions are always stored (tiny); media
+// bytes are only downloaded when ASSISTANT_SAVE_MEDIA is on.
 type savedPost struct {
 	ID         int64  `json:"id"`
 	ChatID     int64  `json:"chat_id"`
@@ -43,14 +43,6 @@ type savedPost struct {
 	MediaSaved bool   `json:"media_saved,omitempty"`
 	MediaPath  string `json:"media_path,omitempty"`
 	SourceLink string `json:"source_link,omitempty"`
-	Forwarded  bool   `json:"forwarded,omitempty"`
-}
-
-func (p *savedPost) body() string {
-	if p.Caption != "" {
-		return p.Text + "\n\n" + p.Caption
-	}
-	return p.Text
 }
 
 func (a *app) postPath() string {
@@ -81,67 +73,36 @@ func (a *app) sortedWatched() []watchedChannel {
 	return out
 }
 
-// assistantOnMessage is called for every message. It saves posts from watched
-// channels/groups and anything forwarded to the bot directly.
+// assistantOnMessage saves every new post in a watched channel/group.
 func (a *app) assistantOnMessage(b *gotgbot.Bot, msg *gotgbot.Message) {
 	if msg == nil {
 		return
 	}
 	if a.isWatched(msg.Chat.Id) {
-		a.savePostFromMessage(b, msg, false)
-		return
-	}
-	if msg.Chat.Type == "private" && msg.ForwardOrigin != nil {
-		a.savePostFromMessage(b, msg, true)
+		a.savePostFromMessage(b, msg)
 	}
 }
 
-func (a *app) savePostFromMessage(b *gotgbot.Bot, msg *gotgbot.Message, forwarded bool) {
+func (a *app) savePostFromMessage(b *gotgbot.Bot, msg *gotgbot.Message) {
 	p := &savedPost{
-		ChatID:    msg.Chat.Id,
-		ChatTitle: msg.Chat.Title,
-		MessageID: msg.MessageId,
-		Date:      msg.Date,
-		EditDate:  msg.EditDate,
-		Text:      msg.Text,
-		Caption:   msg.Caption,
+		ChatID:     msg.Chat.Id,
+		ChatTitle:  msg.Chat.Title,
+		MessageID:  msg.MessageId,
+		Date:       msg.Date,
+		EditDate:   msg.EditDate,
+		Text:       msg.Text,
+		Caption:    msg.Caption,
+		SourceLink: tmeLink(msg.Chat.Id, msg.MessageId),
 	}
 	if p.ChatTitle == "" {
 		p.ChatTitle = msg.Chat.Username
 	}
-	mt, fid, size, ext := mediaOf(msg)
+	mt, ext, fid, size := mediaOf(msg)
 	p.MediaType, p.MediaExt, p.FileID, p.FileSize = mt, ext, fid, size
 	if p.Text == "" && p.Caption == "" && p.MediaType == "" {
 		return
 	}
-
-	var key string
-	if forwarded && msg.ForwardOrigin != nil {
-		mo := msg.ForwardOrigin.MergeMessageOrigin()
-		var origChatID int64
-		if mo.Chat != nil {
-			origChatID = mo.Chat.Id
-			if p.ChatTitle == "" {
-				p.ChatTitle = mo.Chat.Title
-			}
-		} else if mo.SenderChat != nil {
-			origChatID = mo.SenderChat.Id
-			if p.ChatTitle == "" {
-				p.ChatTitle = mo.SenderChat.Title
-			}
-		}
-		p.Forwarded = true
-		if mo.MessageId != 0 {
-			key = fmt.Sprintf("f:%d:%d", origChatID, mo.MessageId)
-			p.SourceLink = tmeLink(origChatID, mo.MessageId)
-		} else {
-			key = fmt.Sprintf("f:%d:%d", origChatID, mo.Date)
-		}
-	} else {
-		key = fmt.Sprintf("%d:%d", msg.Chat.Id, msg.MessageId)
-		p.SourceLink = tmeLink(msg.Chat.Id, msg.MessageId)
-	}
-
+	key := fmt.Sprintf("%d:%d", msg.Chat.Id, msg.MessageId)
 	a.savePost(b, p, key)
 }
 
@@ -155,6 +116,7 @@ func (a *app) savePost(b *gotgbot.Bot, p *savedPost, key string) {
 				a.posts[i].Text = p.Text
 				a.posts[i].Caption = p.Caption
 				a.posts[i].MediaType = p.MediaType
+				a.posts[i].MediaExt = p.MediaExt
 				a.posts[i].FileID = p.FileID
 				a.posts[i].FileSize = p.FileSize
 			}
@@ -169,17 +131,17 @@ func (a *app) savePost(b *gotgbot.Bot, p *savedPost, key string) {
 	a.postIdx[key] = p.ID
 	a.mu.Unlock()
 	a.appendPostLine(p)
-	a.maybeSaveMedia(b, p, false)
+	a.maybeSaveMedia(b, p)
 }
 
-func (a *app) maybeSaveMedia(b *gotgbot.Bot, p *savedPost, force bool) {
-	if !force && !a.cfg.SaveMedia {
+func (a *app) maybeSaveMedia(b *gotgbot.Bot, p *savedPost) {
+	if !a.cfg.SaveMedia {
 		return
 	}
 	if p.FileID == "" || p.MediaSaved {
 		return
 	}
-	if !force && p.FileSize > int64(a.cfg.MaxMediaMB)*1024*1024 {
+	if p.FileSize > int64(a.cfg.MaxMediaMB)*1024*1024 {
 		log.Printf("assistant: media #%d too big (%.1f MB), skipping", p.ID, float64(p.FileSize)/1048576)
 		return
 	}
@@ -276,7 +238,6 @@ func loadPosts(path string) ([]savedPost, map[string]int64, int64) {
 			next = p.ID + 1
 		}
 	}
-	// rebuild dedupe index
 	for _, p := range posts {
 		if p.MessageID != 0 {
 			idx[fmt.Sprintf("%d:%d", p.ChatID, p.MessageID)] = p.ID
@@ -285,38 +246,38 @@ func loadPosts(path string) ([]savedPost, map[string]int64, int64) {
 	return posts, idx, next
 }
 
-// mediaOf extracts (type, file_id, size, extension) from a message.
-func mediaOf(msg *gotgbot.Message) (string, string, int64, string) {
+// mediaOf extracts (type, extension, file_id, size) from a message.
+func mediaOf(msg *gotgbot.Message) (string, string, string, int64) {
 	if v := msg.Video; v != nil {
-		return "video", v.FileId, v.FileSize, "mp4"
+		return "video", "mp4", v.FileId, v.FileSize
 	}
 	if len(msg.Photo) > 0 {
 		p := msg.Photo[len(msg.Photo)-1]
-		return "photo", p.FileId, p.FileSize, "jpg"
+		return "photo", "jpg", p.FileId, p.FileSize
 	}
 	if d := msg.Document; d != nil {
 		ext := strings.TrimPrefix(filepath.Ext(d.FileName), ".")
 		if ext == "" {
 			ext = "bin"
 		}
-		return "document", d.FileId, d.FileSize, ext
+		return "document", ext, d.FileId, d.FileSize
 	}
 	if a := msg.Audio; a != nil {
-		return "audio", a.FileId, a.FileSize, "m4a"
+		return "audio", "m4a", a.FileId, a.FileSize
 	}
 	if v := msg.Voice; v != nil {
-		return "voice", v.FileId, v.FileSize, "ogg"
+		return "voice", "ogg", v.FileId, v.FileSize
 	}
 	if v := msg.VideoNote; v != nil {
-		return "video_note", v.FileId, v.FileSize, "mp4"
+		return "video_note", "mp4", v.FileId, v.FileSize
 	}
 	if an := msg.Animation; an != nil {
-		return "animation", an.FileId, an.FileSize, "gif"
+		return "animation", "gif", an.FileId, an.FileSize
 	}
 	if s := msg.Sticker; s != nil {
-		return "sticker", s.FileId, s.FileSize, "webp"
+		return "sticker", "webp", s.FileId, s.FileSize
 	}
-	return "", "", 0, ""
+	return "", "", "", 0
 }
 
 // tmeLink builds a t.me/... link for a post.
@@ -441,138 +402,70 @@ func (a *app) cmdListChannels(b *gotgbot.Bot, ctx *ext.Context) error {
 	return replyMsg(msg, b, strings.TrimSuffix(sb.String(), "\n"), nil)
 }
 
-func (a *app) cmdAStats(b *gotgbot.Bot, ctx *ext.Context) error {
-	msg := ctx.EffectiveMessage
-	if msg == nil {
-		return nil
+// resolveTmePost turns a t.me/... link into (chat_id, message_id).
+func (a *app) resolveTmePost(b *gotgbot.Bot, raw string) (int64, int64, error) {
+	u := strings.TrimSpace(raw)
+	for _, pre := range []string{"https://t.me/", "http://t.me/", "https://telegram.me/", "http://telegram.me/", "t.me/", "telegram.me/"} {
+		u = strings.TrimPrefix(u, pre)
 	}
-	if !a.isAdmin(msg.From.Id) {
-		return replyMsg(msg, b, "Only admins can see stats.", nil)
-	}
-	a.mu.Lock()
-	n := len(a.posts)
-	watched := len(a.watched)
-	var mediaBytes, savedBytes int64
-	mediaPosts := 0
-	savedMedia := 0
-	for _, p := range a.posts {
-		if p.FileID != "" {
-			mediaPosts++
-			mediaBytes += p.FileSize
-			if p.MediaSaved {
-				savedMedia++
-				if st, err := os.Stat(p.MediaPath); err == nil {
-					savedBytes += st.Size()
-				}
-			}
+	u = strings.SplitN(u, "?", 2)[0]
+	parts := strings.Split(strings.Trim(u, "/"), "/")
+	if len(parts) == 3 && parts[0] == "c" {
+		cid, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return 0, 0, fmt.Errorf("bad channel id in link")
 		}
+		msgID, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil {
+			return 0, 0, fmt.Errorf("bad message id in link")
+		}
+		return -1000000000000 - cid, msgID, nil
 	}
-	a.mu.Unlock()
-	text := fmt.Sprintf(
-		"assistant stats:\nsaved posts: %d\nwatched channels: %d\nposts with media: %d\nmedia metadata: %s\nmedia actually downloaded: %d (%s)",
-		n, watched, mediaPosts, humanSize(mediaBytes), savedMedia, humanSize(savedBytes),
-	)
-	return replyMsg(msg, b, text, nil)
+	if len(parts) >= 2 {
+		msgID, err := strconv.ParseInt(parts[len(parts)-1], 10, 64)
+		if err != nil {
+			return 0, 0, fmt.Errorf("bad message id in link")
+		}
+		chatID, _, err := a.resolveChat(b, parts[0])
+		if err != nil {
+			return 0, 0, err
+		}
+		return chatID, msgID, nil
+	}
+	return 0, 0, fmt.Errorf("unsupported link: %q", raw)
 }
 
-func (a *app) cmdASearch(b *gotgbot.Bot, ctx *ext.Context) error {
+// cmdGetPost copies a post straight from a t.me/... link into a chat.
+// Telegram copies it server-side — no download, full media included.
+func (a *app) cmdGetPost(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 	if msg == nil {
 		return nil
 	}
 	if !a.isAdmin(msg.From.Id) {
-		return replyMsg(msg, b, "Only admins can search.", nil)
+		return replyMsg(msg, b, "Only admins can use /getpost.", nil)
 	}
-	q := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(msg.Text, "/asearch")))
-	if q == "" {
-		return replyMsg(msg, b, "Usage: /asearch <query>", nil)
+	raw := strings.TrimSpace(strings.TrimPrefix(msg.Text, "/getpost"))
+	if raw == "" {
+		return replyMsg(msg, b, "Usage: /getpost <t.me/c/... or t.me/username/...> [target chat id|@username]", nil)
 	}
-	a.mu.Lock()
-	var hits []savedPost
-	for _, p := range a.posts {
-		if strings.Contains(strings.ToLower(p.Text+"\n"+p.Caption), q) {
-			hits = append(hits, p)
+	fields := strings.Fields(raw)
+	target := msg.Chat.Id
+	if len(fields) > 1 {
+		chatID, _, err := a.resolveChat(b, fields[1])
+		if err != nil {
+			return replyMsg(msg, b, fmt.Sprintf("could not resolve target: %v", err), nil)
 		}
-		if len(hits) >= 10 {
-			break
-		}
+		target = chatID
 	}
-	a.mu.Unlock()
-	if len(hits) == 0 {
-		return replyMsg(msg, b, "no saved posts match.", nil)
+	fromID, msgID, err := a.resolveTmePost(b, fields[0])
+	if err != nil {
+		return replyMsg(msg, b, err.Error(), nil)
 	}
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "matches (%d):\n", len(hits))
-	for _, p := range hits {
-		snippet := strings.ReplaceAll(p.body(), "\n", " ")
-		if len(snippet) > 90 {
-			snippet = snippet[:90] + "…"
-		}
-		fmt.Fprintf(&sb, "#%d [%s] %s: %s\n", p.ID, p.ChatTitle, time.Unix(p.Date, 0).Format("2006-01-02"), snippet)
+	if _, err := b.CopyMessage(target, fromID, msgID, nil); err != nil {
+		return replyMsg(msg, b, fmt.Sprintf("could not get post: %v", err), nil)
 	}
-	return replyMsg(msg, b, strings.TrimSuffix(sb.String(), "\n"), nil)
-}
-
-func (a *app) cmdASave(b *gotgbot.Bot, ctx *ext.Context) error {
-	msg := ctx.EffectiveMessage
-	if msg == nil {
-		return nil
-	}
-	if !a.isAdmin(msg.From.Id) {
-		return replyMsg(msg, b, "Only admins can save posts.", nil)
-	}
-	repl := msg.ReplyToMessage
-	if repl == nil {
-		return replyMsg(msg, b, "Reply to a message to save it, e.g. /asave", nil)
-	}
-	a.savePostFromMessage(b, repl, false)
-	return replyMsg(msg, b, "post saved locally. See /astats.", nil)
-}
-
-func (a *app) cmdAShow(b *gotgbot.Bot, ctx *ext.Context) error {
-	msg := ctx.EffectiveMessage
-	if msg == nil {
-		return nil
-	}
-	if !a.isAdmin(msg.From.Id) {
-		return replyMsg(msg, b, "Only admins can view posts.", nil)
-	}
-	var id int64
-	if _, err := fmt.Sscanf(strings.TrimPrefix(msg.Text, "/ashow"), "%d", &id); err != nil {
-		return replyMsg(msg, b, "Usage: /ashow <post id>", nil)
-	}
-	a.mu.Lock()
-	var p *savedPost
-	for i := range a.posts {
-		if a.posts[i].ID == id {
-			p = &a.posts[i]
-			break
-		}
-	}
-	a.mu.Unlock()
-	if p == nil {
-		return replyMsg(msg, b, fmt.Sprintf("no post #%d.", id), nil)
-	}
-	media := ""
-	if p.MediaType != "" {
-		status := "not downloaded"
-		if p.MediaSaved {
-			status = p.MediaPath
-		}
-		media = fmt.Sprintf("[%s · %s · %s]\n", p.MediaType, humanSize(p.FileSize), status)
-	}
-	date := time.Unix(p.Date, 0).Format("2006-01-02 15:04")
-	header := fmt.Sprintf("#%d · %s · %s\n%s%s", p.ID, date, p.ChatTitle, media, p.SourceLink)
-	body := p.body()
-	if body == "" {
-		body = "(no text)"
-	}
-	text := header + "\n\n" + body
-	const max = 3900
-	if len(text) > max {
-		text = text[:max] + "\n…(truncated)"
-	}
-	return replyMsg(msg, b, text, nil)
+	return replyMsg(msg, b, fmt.Sprintf("post copied into chat %d — no download, full media included.", target), nil)
 }
 
 // cmdAForward shares a saved post into another chat by forwarding it.
@@ -586,9 +479,7 @@ func (a *app) cmdAForward(b *gotgbot.Bot, ctx *ext.Context) error {
 	if !a.isAdmin(msg.From.Id) {
 		return replyMsg(msg, b, "Only admins can forward posts.", nil)
 	}
-	raw := strings.TrimPrefix(msg.Text, "/afwd")
-	raw = strings.TrimPrefix(raw, "/acopy")
-	fields := strings.Fields(raw)
+	fields := strings.Fields(strings.TrimPrefix(msg.Text, "/afwd"))
 	if len(fields) == 0 {
 		return replyMsg(msg, b, "Usage: /afwd <post id> [target chat id|@username]", nil)
 	}
@@ -620,129 +511,4 @@ func (a *app) cmdAForward(b *gotgbot.Bot, ctx *ext.Context) error {
 		return replyMsg(msg, b, fmt.Sprintf("forward failed: %v", err), nil)
 	}
 	return replyMsg(msg, b, fmt.Sprintf("Post #%d forwarded to chat %d — no download, full media included.", id, target), nil)
-}
-
-func (a *app) cmdAGet(b *gotgbot.Bot, ctx *ext.Context) error {
-	msg := ctx.EffectiveMessage
-	if msg == nil {
-		return nil
-	}
-	if !a.isAdmin(msg.From.Id) {
-		return replyMsg(msg, b, "Only admins can fetch media.", nil)
-	}
-	var id int64
-	if _, err := fmt.Sscanf(strings.TrimPrefix(msg.Text, "/aget"), "%d", &id); err != nil {
-		return replyMsg(msg, b, "Usage: /aget <post id>", nil)
-	}
-	a.mu.Lock()
-	var p *savedPost
-	for i := range a.posts {
-		if a.posts[i].ID == id {
-			p = &a.posts[i]
-			break
-		}
-	}
-	a.mu.Unlock()
-	if p == nil {
-		return replyMsg(msg, b, fmt.Sprintf("no post #%d.", id), nil)
-	}
-	if p.FileID == "" {
-		return replyMsg(msg, b, fmt.Sprintf("post #%d has no media.\n\n%s", id, p.body()), nil)
-	}
-	if p.MediaSaved {
-		return replyMsg(msg, b, fmt.Sprintf("post #%d media already saved:\n%s", id, p.MediaPath), nil)
-	}
-	if p.FileSize > int64(a.cfg.MaxMediaMB)*1024*1024 {
-		return replyMsg(msg, b, fmt.Sprintf("post #%d media is %s — larger than the %d MB cap. Raise ASSISTANT_MAX_MEDIA_MB to allow it.", id, humanSize(p.FileSize), a.cfg.MaxMediaMB), nil)
-	}
-	replyMsg(msg, b, fmt.Sprintf("Downloading media for post #%d (%s)…", id, humanSize(p.FileSize)), nil)
-	a.maybeSaveMedia(b, p, true)
-	a.mu.Lock()
-	for i := range a.posts {
-		if a.posts[i].ID == id {
-			p = &a.posts[i]
-			break
-		}
-	}
-	a.mu.Unlock()
-	if !p.MediaSaved {
-		return replyMsg(msg, b, fmt.Sprintf("download failed for post #%d.", id), nil)
-	}
-	return replyMsg(msg, b, fmt.Sprintf("post #%d media saved:\n%s", id, p.MediaPath), nil)
-}
-
-func (a *app) cmdAExport(b *gotgbot.Bot, ctx *ext.Context) error {
-	msg := ctx.EffectiveMessage
-	if msg == nil {
-		return nil
-	}
-	if !a.isAdmin(msg.From.Id) {
-		return replyMsg(msg, b, "Only admins can export.", nil)
-	}
-	a.mu.Lock()
-	posts := append([]savedPost(nil), a.posts...)
-	a.mu.Unlock()
-	if len(posts) == 0 {
-		return replyMsg(msg, b, "no saved posts to export.", nil)
-	}
-	dir := filepath.Join(a.cfg.DataDir, "assistant")
-	_ = os.MkdirAll(dir, 0o700)
-	path := filepath.Join(dir, fmt.Sprintf("archive-%s.html", time.Now().Format("20060102-150405")))
-	if err := writeHTML(posts, path); err != nil {
-		return replyMsg(msg, b, fmt.Sprintf("export failed: %v", err), nil)
-	}
-	return replyMsg(msg, b, fmt.Sprintf("exported %d posts (offline HTML):\n%s", len(posts), path), nil)
-}
-
-func writeHTML(posts []savedPost, path string) error {
-	var sb strings.Builder
-	sb.WriteString("<!doctype html><html><head><meta charset=\"utf-8\">")
-	sb.WriteString("<title>telegram-tui assistant archive</title>")
-	sb.WriteString("<style>body{font-family:system-ui;max-width:760px;margin:20px auto;padding:0 12px}")
-	sb.WriteString("h1{font-size:1.4em}.post{border:1px solid #ddd;border-radius:8px;padding:10px 14px;margin:14px 0}")
-	sb.WriteString(".meta{color:#888;font-size:.85em;margin-bottom:6px}.media{color:#2563eb;font-size:.9em}")
-	sb.WriteString("pre{white-space:pre-wrap}</style></head><body>")
-	fmt.Fprintf(&sb, "<h1>telegram-tui assistant archive</h1><p>%d posts · %s</p>", len(posts), time.Now().Format("2006-01-02 15:04"))
-	for _, p := range posts {
-		sb.WriteString("<div class=\"post\">")
-		date := time.Unix(p.Date, 0).Format("2006-01-02 15:04")
-		fmt.Fprintf(&sb, "<div class=\"meta\">#%d · %s · %s · %s</div>", p.ID, date, htmlEsc(p.ChatTitle), htmlEsc(p.SourceLink))
-		if p.MediaType != "" {
-			size := ""
-			if p.FileSize > 0 {
-				size = " · " + humanSize(p.FileSize)
-			}
-			fmt.Fprintf(&sb, "<div class=\"media\">[%s%s]%s</div>", p.MediaType, size, savedMark(p))
-		}
-		sb.WriteString("<pre>" + htmlEsc(p.body()) + "</pre>")
-		sb.WriteString("</div>")
-	}
-	sb.WriteString("</body></html>")
-	return os.WriteFile(path, []byte(sb.String()), 0o600)
-}
-
-func savedMark(p savedPost) string {
-	if p.FileID != "" && p.MediaSaved {
-		return " (downloaded)"
-	}
-	return ""
-}
-
-func htmlEsc(s string) string {
-	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "\"", "&quot;")
-	return r.Replace(s)
-}
-
-func humanSize(bytes int64) string {
-	if bytes < 1024 {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	units := []string{"KB", "MB", "GB", "TB"}
-	n := float64(bytes) / 1024
-	i := 0
-	for n >= 1024 && i < len(units)-1 {
-		n /= 1024
-		i++
-	}
-	return fmt.Sprintf("%.1f %s", n, units[i])
 }

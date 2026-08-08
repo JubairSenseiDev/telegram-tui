@@ -7,21 +7,21 @@ import (
 )
 
 func TestMediaOf(t *testing.T) {
-	mt, fid, size, ext := mediaOf(&gotgbot.Message{
+	mt, ext, fid, size := mediaOf(&gotgbot.Message{
 		Video: &gotgbot.Video{FileId: "VID1", FileSize: 1000},
 	})
-	if mt != "video" || fid != "VID1" || size != 1000 || ext != "mp4" {
-		t.Fatalf("video mediaOf = %q %q %d %q", mt, fid, size, ext)
+	if mt != "video" || ext != "mp4" || fid != "VID1" || size != 1000 {
+		t.Fatalf("video mediaOf = %q %q %q %d", mt, ext, fid, size)
 	}
 
-	mt, _, _, ext = mediaOf(&gotgbot.Message{
+	mt, ext, _, _ = mediaOf(&gotgbot.Message{
 		Photo: []gotgbot.PhotoSize{{FileId: "small", FileSize: 10}, {FileId: "big", FileSize: 99}},
 	})
 	if mt != "photo" || ext != "jpg" {
 		t.Fatalf("photo mediaOf = %q %q", mt, ext)
 	}
 
-	mt, _, _, ext = mediaOf(&gotgbot.Message{
+	mt, ext, _, _ = mediaOf(&gotgbot.Message{
 		Document: &gotgbot.Document{FileId: "DOC1", FileSize: 5, FileName: "report.pdf"},
 	})
 	if mt != "document" || ext != "pdf" {
@@ -46,15 +46,6 @@ func TestTmeLink(t *testing.T) {
 		if got := tmeLink(c.chatID, c.msgID); got != c.want {
 			t.Errorf("tmeLink(%d,%d) = %q, want %q", c.chatID, c.msgID, got, c.want)
 		}
-	}
-}
-
-func TestHumanSize(t *testing.T) {
-	if humanSize(512) != "512 B" {
-		t.Fatal("humanSize(512)")
-	}
-	if humanSize(1048576) != "1.0 MB" {
-		t.Fatalf("humanSize(1048576) = %q", humanSize(1048576))
 	}
 }
 
@@ -90,5 +81,22 @@ func TestLoadPostsRoundtrip(t *testing.T) {
 func TestParseNonZeroInt(t *testing.T) {
 	if parseNonZeroInt("50", 10) != 50 || parseNonZeroInt("abc", 10) != 10 || parseNonZeroInt("0", 10) != 10 {
 		t.Fatal("parseNonZeroInt")
+	}
+}
+
+func TestTmeChannelLinkToChatID(t *testing.T) {
+	a := &app{}
+	chatID, msgID, err := a.resolveTmePost(nil, "https://t.me/c/1550117445/42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msgID != 42 || chatID != -1001550117445 {
+		t.Fatalf("got chat=%d msg=%d", chatID, msgID)
+	}
+	if _, _, err := a.resolveTmePost(nil, "t.me/c/abc/1"); err == nil {
+		t.Fatal("bad channel id should error")
+	}
+	if _, _, err := a.resolveTmePost(nil, "https://example.com/x"); err == nil {
+		t.Fatal("unsupported link should error")
 	}
 }
