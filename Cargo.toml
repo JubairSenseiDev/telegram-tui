@@ -1,12 +1,18 @@
 [package]
 name = "telegram-tui"
-version = "4.0.0"
+version = "4.1.0"
 edition = "2021"
 description = "A keyboard-first Telegram TUI for Termux and Linux (MovieBox-style)."
 license = "MIT"
 repository = "https://github.com/JubairSenseiDev/telegram-tui"
 keywords = ["telegram", "tui", "termux", "cli", "mtproto"]
 categories = ["command-line-utilities"]
+
+[package.metadata.deb]
+maintainer = "JubairSenseiDev <JubairSenseiDev@users.noreply.github.com>"
+section = "utils"
+priority = "optional"
+depends = "libc6"
 
 [dependencies]
 ratatui = "0.30"
