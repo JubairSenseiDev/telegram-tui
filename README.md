@@ -20,7 +20,7 @@ No TDLib, no GUI, no browser. Pure MTProto over the terminal.
 - 🔎 **Search** — global search + in-chat search
 - 📦 **Exports** — chats, dialogs and members to CSV/text
 - 🐍 **Python tools** — export summaries & chat stats (stdlib only)
-- 🤖 **Go bot** — broadcast to subscribers, mirror chats/channels, keyword auto-replies, scheduled messages
+- 🤖 **Go bot** — broadcast to subscribers, mirror chats/channels, keyword auto-replies, scheduled messages, and a **low-data post-saver assistant** (watch channels → archive full posts locally)
 
 ---
 

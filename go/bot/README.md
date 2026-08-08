@@ -1,6 +1,6 @@
 # 🤖 telegram-tui Go bot
 
-A real Telegram bot service: **broadcasts**, **channel mirroring**, **keyword auto-replies** and **scheduled messages**. State is kept in JSON files, so the bot survives restarts.
+A real Telegram bot service: **broadcasts**, **channel mirroring**, **keyword auto-replies**, **scheduled messages** and a **low-data post-saver assistant**. State is kept in JSON files, so the bot survives restarts.
 
 ## Configure
 
@@ -10,6 +10,8 @@ export ADMIN_USER_IDS="123456,789012"      # comma-separated user IDs allowed to
 export SOURCE_CHAT_ID="-100123456789"      # optional: chat/channel to mirror FROM
 export TARGET_CHAT_ID="-100987654321"      # optional: chat/channel to mirror INTO
 export DATA_DIR="data"                     # optional: state directory (default: ./data)
+export ASSISTANT_SAVE_MEDIA="false"        # optional: auto-download media bytes (default: metadata only)
+export ASSISTANT_MAX_MEDIA_MB="50"         # optional: per-media download cap to keep data low (default: 50)
 ```
 
 > Chat IDs are signed 64-bit integers (negative for groups/channels, positive for users). Get them with `/start` on [@userinfobot](https://t.me/userinfobot).
@@ -50,6 +52,28 @@ bot has seen (persisted in `data/seen.json`).
 | `/schedule <seconds> <text>` | admin | repeat a message every N seconds (min 10) |
 | `/schedules` | admin | list schedules |
 | `/scheduledel <id>` | admin | delete a schedule |
+| `/addchannel <id>\|<@user>\|<t.me/...>` | admin | watch a channel/group, archive every post locally |
+| `/removechannel <id>` | admin | stop watching a channel |
+| `/listchannels` | admin | list watched channels |
+| `/asave` | admin | save the replied-to message |
+| `/asearch <q>` | admin | search the local archive |
+| `/aget <id>` | admin | download that post's media to disk |
+| `/astats` | admin | archive stats (posts, media, data used) |
+| `/aexport` | admin | write all posts to one offline HTML file |
+
+## Assistant — save posts with little data
+
+The assistant archives the **full text + caption + media info** of every post,
+instantly, using almost no internet. Media *bytes* are only downloaded when you
+actually want them (never by default).
+
+- **Watch channels** — `/addchannel` a public or private channel you own/admin (add the bot as a channel admin so it receives posts). Every new post is saved locally.
+- **Forward to save** — forward any post into the bot's private chat; it is archived automatically.
+- **`/asave` on a reply** — save a single message in any chat on demand.
+- Saved posts live in `DATA_DIR/assistant_posts.jsonl` (append-only, one post per line). Reading the archive, searching and exporting are **free** — no internet at all.
+- **`/aget <id>`** downloads just that one post's media to `DATA_DIR/assistant/media/` (respects `ASSISTANT_MAX_MEDIA_MB`).
+- Set `ASSISTANT_SAVE_MEDIA=true` to auto-download media under the size cap as posts arrive.
+- **`/aexport`** writes every saved post into a single offline HTML file — the complete archive, readable in any browser with zero data use.
 
 ## Automation (no commands needed)
 

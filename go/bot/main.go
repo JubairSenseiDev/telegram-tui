@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
@@ -16,6 +17,9 @@ type config struct {
 	SourceChat int64
 	TargetChat int64
 	DataDir    string
+	Token      string
+	SaveMedia  bool
+	MaxMediaMB int
 }
 
 func env(key, def string) string {
@@ -54,6 +58,14 @@ func hasArg(name string) bool {
 		}
 	}
 	return false
+}
+
+func parseNonZeroInt(s string, def int) int {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
 }
 
 // dumpIDs prints every user and chat ID found in the bot's pending updates,
@@ -105,6 +117,9 @@ func main() {
 		SourceChat: parseChatID(os.Getenv("SOURCE_CHAT_ID")),
 		TargetChat: parseChatID(os.Getenv("TARGET_CHAT_ID")),
 		DataDir:    env("DATA_DIR", "data"),
+		Token:      token,
+		SaveMedia:  env("ASSISTANT_SAVE_MEDIA", "false") == "true",
+		MaxMediaMB: parseNonZeroInt(env("ASSISTANT_MAX_MEDIA_MB", "50"), 50),
 	}
 
 	app, err := newApp(cfg)
@@ -141,6 +156,15 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("schedule", app.cmdSchedule))
 	dispatcher.AddHandler(handlers.NewCommand("schedules", app.cmdSchedules))
 	dispatcher.AddHandler(handlers.NewCommand("scheduledel", app.cmdScheduleDel))
+	// assistant: watch channels + archive posts locally
+	dispatcher.AddHandler(handlers.NewCommand("addchannel", app.cmdAddChannel))
+	dispatcher.AddHandler(handlers.NewCommand("removechannel", app.cmdRemoveChannel))
+	dispatcher.AddHandler(handlers.NewCommand("listchannels", app.cmdListChannels))
+	dispatcher.AddHandler(handlers.NewCommand("asave", app.cmdASave))
+	dispatcher.AddHandler(handlers.NewCommand("asearch", app.cmdASearch))
+	dispatcher.AddHandler(handlers.NewCommand("aget", app.cmdAGet))
+	dispatcher.AddHandler(handlers.NewCommand("astats", app.cmdAStats))
+	dispatcher.AddHandler(handlers.NewCommand("aexport", app.cmdAExport))
 	// everything else: keyword replies + mirror forwarding
 	dispatcher.AddHandler(handlers.NewMessage(nil, app.onMessage))
 

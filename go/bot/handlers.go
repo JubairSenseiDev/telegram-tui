@@ -27,7 +27,17 @@ Admin:
 /keywords - list keyword auto-replies
 /schedule <seconds> <text> - repeat message every N seconds
 /schedules - list schedules
-/scheduledel <id> - delete a schedule`
+/scheduledel <id> - delete a schedule
+
+Assistant (save posts with little data):
+/addchannel <id|@user|t.me link> - watch a channel/group, archive every post
+/removechannel <id> - stop watching a channel
+/listchannels - list watched channels
+/asave - save the replied-to message
+/asearch <q> - search the local archive
+/aget <id> - download that post's media to disk
+/astats - archive stats (posts, media, data used)
+/aexport - write all posts to one offline HTML file`
 
 // replyMsg is a helper wrapping Message.Reply, discarding the sent Message.
 func replyMsg(msg *gotgbot.Message, b *gotgbot.Bot, text string, opts *gotgbot.SendMessageOpts) error {

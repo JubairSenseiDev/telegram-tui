@@ -34,6 +34,9 @@ func (a *app) onMessage(b *gotgbot.Bot, ctx *ext.Context) error {
 	// channel / group mirroring
 	a.mirror(b, msg)
 
+	// assistant: archive posts from watched channels + forwarded-to-bot posts
+	a.assistantOnMessage(b, msg)
+
 	return nil
 }
 

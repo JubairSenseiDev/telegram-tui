@@ -47,7 +47,11 @@ type app struct {
 	keywords    map[string]string
 	schedules   []scheduleItem
 	seen        map[int64]seenChat
+	watched     map[int64]watchedChannel
+	posts       []savedPost
+	postIdx     map[string]int64
 	nextID      int64
+	assistNext  int64
 }
 
 func newApp(cfg config) (*app, error) {
@@ -59,6 +63,8 @@ func newApp(cfg config) (*app, error) {
 		keywords:    map[string]string{},
 		subscribers: []subscriber{},
 		seen:        map[int64]seenChat{},
+		watched:     map[int64]watchedChannel{},
+		postIdx:     map[string]int64{},
 	}
 	if err := a.load(); err != nil {
 		return nil, err
@@ -75,6 +81,8 @@ func (a *app) load() error {
 	a.keywords = loadJSON[map[string]string](a.path("keywords.json"), a.keywords)
 	a.schedules = loadJSON[[]scheduleItem](a.path("schedules.json"), a.schedules)
 	a.seen = loadJSON[map[int64]seenChat](a.path("seen.json"), a.seen)
+	a.watched = loadJSON[map[int64]watchedChannel](a.path("assistant_channels.json"), a.watched)
+	a.posts, a.postIdx, a.assistNext = loadPosts(a.path("assistant_posts.jsonl"))
 	for _, s := range a.schedules {
 		if s.ID >= a.nextID {
 			a.nextID = s.ID + 1
@@ -115,6 +123,7 @@ func (a *app) saveAll() {
 	_ = a.save("keywords.json", a.keywords)
 	_ = a.save("schedules.json", a.schedules)
 	_ = a.save("seen.json", a.seen)
+	_ = a.save("assistant_channels.json", a.watched)
 }
 
 func (a *app) isAdmin(userID int64) bool {
