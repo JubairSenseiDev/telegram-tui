@@ -575,6 +575,53 @@ func (a *app) cmdAShow(b *gotgbot.Bot, ctx *ext.Context) error {
 	return replyMsg(msg, b, text, nil)
 }
 
+// cmdAForward shares a saved post into another chat by forwarding it.
+// Forwarding is server-side: the media never downloads — Telegram reuses its
+// own copy, so even huge posts move instantly to the target chat.
+func (a *app) cmdAForward(b *gotgbot.Bot, ctx *ext.Context) error {
+	msg := ctx.EffectiveMessage
+	if msg == nil {
+		return nil
+	}
+	if !a.isAdmin(msg.From.Id) {
+		return replyMsg(msg, b, "Only admins can forward posts.", nil)
+	}
+	raw := strings.TrimPrefix(msg.Text, "/afwd")
+	raw = strings.TrimPrefix(raw, "/acopy")
+	fields := strings.Fields(raw)
+	if len(fields) == 0 {
+		return replyMsg(msg, b, "Usage: /afwd <post id> [target chat id|@username]", nil)
+	}
+	id, err := strconv.ParseInt(fields[0], 10, 64)
+	if err != nil {
+		return replyMsg(msg, b, "Usage: /afwd <post id> [target chat id|@username]", nil)
+	}
+	target := msg.Chat.Id
+	if len(fields) > 1 {
+		chatID, _, err := a.resolveChat(b, fields[1])
+		if err != nil {
+			return replyMsg(msg, b, fmt.Sprintf("could not resolve target: %v", err), nil)
+		}
+		target = chatID
+	}
+	a.mu.Lock()
+	var p *savedPost
+	for i := range a.posts {
+		if a.posts[i].ID == id {
+			p = &a.posts[i]
+			break
+		}
+	}
+	a.mu.Unlock()
+	if p == nil {
+		return replyMsg(msg, b, fmt.Sprintf("no post #%d.", id), nil)
+	}
+	if _, err := b.ForwardMessage(target, p.ChatID, p.MessageID, nil); err != nil {
+		return replyMsg(msg, b, fmt.Sprintf("forward failed: %v", err), nil)
+	}
+	return replyMsg(msg, b, fmt.Sprintf("Post #%d forwarded to chat %d — no download, full media included.", id, target), nil)
+}
+
 func (a *app) cmdAGet(b *gotgbot.Bot, ctx *ext.Context) error {
 	msg := ctx.EffectiveMessage
 	if msg == nil {

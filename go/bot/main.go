@@ -162,6 +162,8 @@ func main() {
 	dispatcher.AddHandler(handlers.NewCommand("listchannels", app.cmdListChannels))
 	dispatcher.AddHandler(handlers.NewCommand("asave", app.cmdASave))
 	dispatcher.AddHandler(handlers.NewCommand("ashow", app.cmdAShow))
+	dispatcher.AddHandler(handlers.NewCommand("afwd", app.cmdAForward))
+	dispatcher.AddHandler(handlers.NewCommand("acopy", app.cmdAForward))
 	dispatcher.AddHandler(handlers.NewCommand("asearch", app.cmdASearch))
 	dispatcher.AddHandler(handlers.NewCommand("aget", app.cmdAGet))
 	dispatcher.AddHandler(handlers.NewCommand("astats", app.cmdAStats))

@@ -57,6 +57,7 @@ bot has seen (persisted in `data/seen.json`).
 | `/listchannels` | admin | list watched channels |
 | `/asave` | admin | save the replied-to message |
 | `/ashow <id>` | admin | copy the full saved text of a post (free, no download) |
+| `/afwd <id> [target]` | admin | forward a saved post to a chat — **no download, full media included** (`/acopy` = same) |
 | `/asearch <q>` | admin | search the local archive |
 | `/aget <id>` | admin | download that post's media to disk |
 | `/astats` | admin | archive stats (posts, media, data used) |
@@ -73,7 +74,8 @@ actually want them (never by default).
 - **`/asave` on a reply** — save a single message in any chat on demand.
 - Saved posts live in `DATA_DIR/assistant_posts.jsonl` (append-only, one post per line). Reading the archive, searching and exporting are **free** — no internet at all.
 - **`/ashow <id>`** shows the full saved text + caption of a post so you can copy it — completely free, no download needed. Only media *bytes* (photos/videos/files) ever require a download (`/aget`).
-- **`/aget <id>`** downloads just that one post's media to `DATA_DIR/assistant/media/` (respects `ASSISTANT_MAX_MEDIA_MB`).
+- **`/afwd <id> [target]`** shares the post into any chat/channel by *forwarding* — Telegram reuses its own copy server-side, so even huge posts move **instantly with zero download**. Run it in the target chat (or pass a target id/`@username`). Use `/afwd <id>` for a single post; `/acopy` is an alias.
+- **`/aget <id>`** downloads just that one post's media to `DATA_DIR/assistant/media/` (respects `ASSISTANT_MAX_MEDIA_MB`) — only needed if you truly want the file bytes on disk.
 - Set `ASSISTANT_SAVE_MEDIA=true` to auto-download media under the size cap as posts arrive.
 - **`/aexport`** writes every saved post into a single offline HTML file — the complete archive, readable in any browser with zero data use.
 

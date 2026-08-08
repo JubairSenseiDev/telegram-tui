@@ -35,6 +35,7 @@ Assistant (save posts with little data):
 /listchannels - list watched channels
 /asave - save the replied-to message
 /ashow <id> - copy the full saved text of a post (free, no download)
+/afwd <id> [target] - forward a saved post to a chat (no download, instant)
 /asearch <q> - search the local archive
 /aget <id> - download that post's media to disk
 /astats - archive stats (posts, media, data used)
