@@ -157,5 +157,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: telegram-tui ${{ steps.tag.outputs.version }}
-          draft: true
           files: artifacts/**

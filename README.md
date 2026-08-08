@@ -32,7 +32,7 @@ No TDLib, no GUI, no browser. Pure MTProto over the terminal.
 bash <(curl -s https://raw.githubusercontent.com/JubairSenseiDev/telegram-tui/main/install.sh)
 ```
 
-The installer **downloads a prebuilt binary** for your platform, or compiles from source if no build matches.
+The installer **downloads the latest release binary** for your platform, verifies its checksum and installs it — then just run `telegram-tui` to open it. Linux users can also grab the `.deb` (amd64 / arm64 / armhf) from the latest release.
 
 ### Manual build
 
