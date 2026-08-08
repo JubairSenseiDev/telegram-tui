@@ -119,6 +119,7 @@ pub const DASHBOARD_ITEMS: &[(&str, &str)] = &[
     ("/login", "Login a new account"),
     ("/inbox", "Check inbox"),
     ("/send", "Send a message"),
+    ("/sendfile", "Send a file"),
     ("/note", "Save note"),
     ("/search", "Search messages"),
     ("/dialogs", "Export dialogs CSV"),

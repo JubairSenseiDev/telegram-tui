@@ -95,14 +95,18 @@ cargo build --release --target armv7-unknown-linux-gnueabihf
 | --- | --- |
 | `/setup` | Save Telegram API credentials |
 | `/login` | Login a new account |
-| `/accounts` | Switch / delete sessions |
-| `/inbox` | Open recent chats |
+| `/inbox` | Check inbox |
 | `/send` | Send a message |
 | `/sendfile` | Upload and send a file |
 | `/note` | Save text to Saved Messages |
 | `/search` | Search messages |
-| `/download <t.me/...>` | Download media from a `t.me/...` message link |
+| `/dialogs` | Export dialogs CSV |
+| `/members` | Export members CSV |
+| `/chat` | Export chat history |
+| `/profile` | View profile |
 | `/join` | Join a public group/channel |
+| `/download <t.me/...>` | Download media from a `t.me/...` message link |
+| `/accounts` | Switch / delete sessions |
 | `/exports` | List exported files |
 | `/help` | Show help |
 | `/quit` | Exit |
