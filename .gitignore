@@ -15,4 +15,6 @@ build/
 
 target/
 go/bot/bot
+go/bot/telegram-tui-bot
+go/bot/data/
 *.exe
