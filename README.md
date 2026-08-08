@@ -1,112 +1,121 @@
-# telegram-tui
+# 💬 Telegram TUI
 
-A keyboard-first Telegram TUI for Termux and Linux, in the spirit of MovieBox-Tui.
-Multi-language workspace: **Rust** (main TUI client), **Go** (bot service),
-**Python** (data/export tools). Pure MTProto via [grammers](https://codeberg.org/Lonami/grammers) — no TDLib needed.
+> A fast, keyboard-first Telegram client that runs right in your terminal — on **Termux**, **Linux**, **macOS** and **Windows**.
 
-## Features
+![Platform](https://img.shields.io/badge/platform-Termux%20%7C%20Linux%20%7C%20macOS%20%7C%20Windows-00b8ff)
+![Lang](https://img.shields.io/badge/language-Rust%20%7C%20Go%20%7C%20Python-ee4c2c)
+![Release](https://img.shields.io/github/v/release/JubairSenseiDev/telegram-tui?label=release&color=27b859)
+![License](https://img.shields.io/github/license/JubairSenseiDev/telegram-tui?color=9b59b6)
 
-- Full TUI: dashboard, dialogs, chat, accounts, setup, login, prompts
-- Multi-account login, switching, and session deletion
-- Send messages, reply, save notes to Saved Messages
-- Global message search
-- Export dialogs/members as CSV, chat history as text
-- Join public groups/channels by username or t.me link
-- Profile viewer
-- Go Bot API service for automation
-- Python export summarizers/stats (stdlib only)
+No TDLib, no GUI, no browser. Pure MTProto over the terminal.
 
-## Layout
+---
 
+## ✨ Features
+
+- 🖥️ **Full TUI** — dashboard, dialogs, chat, search, profile, exports
+- 👥 **Multi-account** — login, switch and delete sessions
+- 📨 **Messaging** — send, reply, edit, delete, pin, send files
+- 🔎 **Search** — global search + in-chat search
+- 📦 **Exports** — chats, dialogs and members to CSV/text
+- 🐍 **Python tools** — export summaries & chat stats (stdlib only)
+- 🤖 **Go bot** — standalone Telegram Bot API service
+
+---
+
+## 🚀 Install
+
+### Termux / Linux — one line
+
+```sh
+bash <(curl -s https://raw.githubusercontent.com/JubairSenseiDev/telegram-tui/main/install.sh)
 ```
-src/          Rust TUI client (grammers, ratatui, crossterm)
-go/bot        Go Telegram Bot API service (gotgbot)
-python/       Python export/analysis scripts
-install.sh    unattended Termux/Linux install
+
+The installer **downloads a prebuilt binary** for your platform, or compiles from source if no build matches.
+
+### Manual build
+
+```sh
+git clone https://github.com/JubairSenseiDev/telegram-tui.git
+cd telegram-tui
+cargo build --release
+install -m755 target/release/telegram-tui ~/.local/bin/telegram-tui
 ```
 
-## Commands (Rust TUI)
+### 🔑 Get API credentials
+
+1. Create an app at [my.telegram.org/apps](https://my.telegram.org/apps)
+2. Run the TUI, then use `/setup` and paste your `api_id` / `api_hash`
+
+> Credentials live in `~/.config/telegram-tui/.env` (mode `600`). Sessions → `sessions/`, exports → `exports/`.
+
+---
+
+## ⌨️ Commands
 
 | Command | Action |
 | --- | --- |
 | `/setup` | Save Telegram API credentials |
 | `/login` | Login a new account |
 | `/inbox` | Open recent chats |
-| `/send` | Send one message |
+| `/send` | Send a message |
 | `/sendfile` | Upload and send a file |
 | `/note` | Save text to Saved Messages |
 | `/search` | Search messages |
-| `/dialogs` | Export dialog list |
-| `/members` | Export members CSV |
-| `/chat` | Export chat history |
-| `/profile` | View profile |
-| `/join` | Join public group/channel |
-| `/accounts` | Switch/delete sessions |
+| `/join` | Join a public group/channel |
+| `/accounts` | Switch / delete sessions |
 | `/exports` | List exported files |
 | `/help` | Show help |
 | `/quit` | Exit |
 
-## Install
+---
 
-### Termux / Linux one-liner
+## 🎹 Keys
 
-```sh
-bash <(curl -s https://raw.githubusercontent.com/JubairSenseiDev/telegram-tui/main/install.sh)
-```
+| Key | Action |
+| --- | --- |
+| `Esc` | Back |
+| `Ctrl+C` | Quit |
+| `j` / `k` · `↑` / `↓` | Move in lists |
+| `Enter` | Open / select |
+| `s` | Send · `r` reply · `e` export chat · `m` export members |
+| `o` / `l` | Older / newer messages |
+| `f` | Search in chat |
+| `d` | Delete (type `DELETE`) |
+| `E` | Edit message |
+| `p` / `P` | Pin / unpin |
+| `v` | Members |
+| `M` | Mark read |
+| `R` | Refresh |
 
-The installer builds the Rust TUI (`~/.local/bin/telegram-tui`) and, if the
-Bot token is present in the environment, the Go bot (`~/.local/bin/telegram-tui-bot`).
+---
 
-### Manual
+## 📦 Releases
 
-```sh
-# Rust TUI
-pkg install rust -y            # Linux: apt/dnf install rustc cargo
-git clone https://github.com/JubairSenseiDev/telegram-tui.git
-cd telegram-tui
-cargo build --release
-install -Dm755 target/release/telegram-tui ~/.local/bin/telegram-tui
+Prebuilt binaries for every platform are built automatically on each `v*` tag — see the [latest release](https://github.com/JubairSenseiDev/telegram-tui/releases).
 
-# Go bot
-cd go/bot
-export TELEGRAM_BOT_TOKEN="123:abc"   # from @BotFather
-go run .
-```
+| Platform | Asset |
+| --- | --- |
+| Linux x86_64 | `telegram-tui-x86_64-linux` |
+| Linux ARM64 | `telegram-tui-aarch64-linux` |
+| Linux ARMv7 | `telegram-tui-armv7-linux` |
+| Windows x86_64 | `telegram-tui-x86_64-windows.exe` |
+| macOS ARM64 | `telegram-tui-aarch64-macos` |
+| Termux ARM64 | `telegram-tui-aarch64-termux` |
 
-### Get API credentials
+---
 
-Create an app at https://my.telegram.org/apps, then inside the TUI run `/setup`.
-Credentials are stored in `~/.config/telegram-tui/.env` (mode 600). Sessions live in
-`~/.config/telegram-tui/sessions/` and exports in `~/.config/telegram-tui/exports/`.
+## 🧩 Modules
 
-## Keys
+| Module | Description |
+| --- | --- |
+| `src/` | Rust TUI client (grammers + ratatui) |
+| `go/bot/` | Go Telegram Bot API service |
+| `python/` | Python export & analysis scripts |
+| `.github/` | Release automation (GitHub Actions) |
 
-- Esc = back, Ctrl+C = quit
-- Lists: j/k or arrows, PageUp/PageDown, Enter
-- Chat: s = send, r = reply, e = export chat, m = export members,
-  o/l = older messages, f = search in chat, d = delete (type `DELETE`),
-  E = edit, p/P = pin/unpin, v = members, M = mark read, R = refresh
-- Members: j/k scroll, x = export CSV, e = export chat
-- Dialogs: r = reload, x = members, e = export chat
-- Accounts: Enter = switch, l = login, d = delete (type `DELETE`)
+---
 
-## Releases
+## 📄 License
 
-Prebuilt binaries are built automatically on every `v*` tag via
-[GitHub Actions](.github/workflows/release.yml):
-
-- `x86_64-linux`, `aarch64-linux`, `armv7-linux`
-- `x86_64-windows.exe`
-- `aarch64-macos`
-- `aarch64-termux` (best-effort; Termux users can also build on-device with `install.sh`)
-
-Tag a release with:
-
-```sh
-git tag v4.0.0
-git push origin v4.0.0
-```
-
-## License
-
-MIT
+MIT — see [LICENSE](LICENSE).
