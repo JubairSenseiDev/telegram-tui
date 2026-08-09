@@ -118,7 +118,9 @@ if curl -fsSL "$URL.sha256" -o "$TMP/telegram-tui.sha256" 2>/dev/null; then
 fi
 
 mkdir -p "$DIR"
-chmod +x "$TMP/telegram-tui"
+# Explicit mode, not `chmod +x`: that honours umask, so a root install under
+# umask 077 would leave the binary unreadable to everyone but root.
+chmod 755 "$TMP/telegram-tui"
 mv -f "$TMP/telegram-tui" "$BIN"
 
 ok "installed: ${C_BOLD}$BIN${C_RESET}"
