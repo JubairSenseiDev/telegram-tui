@@ -26,6 +26,7 @@ anyhow = "1"
 chrono = "0.4"
 dotenvy = "0.15"
 dirs = "5"
+unicode-width = "0.2"
 
 [profile.release]
 lto = true

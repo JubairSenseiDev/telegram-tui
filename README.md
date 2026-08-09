@@ -12,13 +12,15 @@
 
 ## ✨ Features
 
-- 🖥️ **Full TUI** — dashboard, dialogs, chat, search, profile, exports, all mouse-free and keyboard-driven
-- 👥 **Multi-account** — login, switch and delete sessions
+- 🖥️ **Telegram-style layout** — chat list beside the conversation, always-visible composer, overlays for everything else
+- 👥 **Multi-account** — login, switch, delete sessions, and check every account's status at once
 - 📨 **Messaging** — send, reply, edit, delete, pin, unpin, forward, mark read
 - 📎 **Files** — upload & send files from your device
-- ⬇️ **Private downloads** — download videos / photos / media from any chat, group or channel — **including private ones** you're a member of — with `g` or `/download`
+- ⬇️ **Private downloads** — download videos / photos / media from any chat, group or channel — **including private ones** you're a member of — with `s` on a message or `D` for a `t.me/...` link
 - 🔎 **Search** — global message search + in-chat search
-- 📦 **Exports** — chats, dialogs and members to CSV / text
+- 👤 **Profile & groups** — edit name, bio, username, photo · join, leave, report
+- 📦 **Exports** — chats, dialogs and members to CSV / text, written incrementally with a row limit
+- 🛟 **Rate-limit aware** — short `FLOOD_WAIT`s are absorbed and retried instead of dropping your work
 - 🐍 **Python tools** — export summaries & chat stats (stdlib only)
 - 🤖 **Go bot** — broadcasts, channel mirroring, keyword auto-replies, scheduled messages and a **grab-and-share assistant** (`/getpost`, `/afwd`, watched channels — no downloads, server-side copies)
 
@@ -29,7 +31,7 @@
 ### One line (Termux / Linux / macOS)
 
 ```sh
-bash <(curl -s https://raw.githubusercontent.com/JubairSenseiDev/telegram-tui/main/install.sh)
+curl -fsSL https://raw.githubusercontent.com/JubairSenseiDev/telegram-tui/main/install.sh | sh
 ```
 
 The installer **downloads the latest release binary** for your platform, verifies its SHA-256 checksum and installs it. Then just run:
@@ -39,6 +41,23 @@ telegram-tui
 ```
 
 > On Termux it installs to `$PREFIX/bin`; on Linux to `/usr/local/bin` (root) or `~/.local/bin` (user). It also updates an already-installed copy.
+
+### Uninstall
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/JubairSenseiDev/telegram-tui/main/uninstall.sh | sh
+```
+
+Removes the binary and leaves your data alone. To delete credentials, login sessions,
+exports and downloads too:
+
+```sh
+curl -fsSL .../uninstall.sh | sh -s -- --purge
+```
+
+`--purge` asks you to type `DELETE` first, since removing sessions signs this device out
+of Telegram. Add `--yes` to skip the prompt in a script. If you installed the `.deb`, the
+uninstaller points you at `apt remove` instead of deleting the file behind dpkg's back.
 
 ### Debian / Ubuntu — `.deb`
 
@@ -89,56 +108,51 @@ cargo build --release --target armv7-unknown-linux-gnueabihf
 
 ---
 
-## ⌨️ Commands
+## 🖥️ Layout
 
-| Command | Action |
-| --- | --- |
-| `/setup` | Save Telegram API credentials |
-| `/login` | Login a new account |
-| `/inbox` | Check inbox |
-| `/send` | Send a message |
-| `/sendfile` | Upload and send a file |
-| `/note` | Save text to Saved Messages |
-| `/search` | Search messages |
-| `/dialogs` | Export dialogs CSV |
-| `/members` | Export members CSV |
-| `/chat` | Export chat history |
-| `/profile` | View profile |
-| `/join` | Join a public group/channel |
-| `/download <t.me/...>` | Download media from a `t.me/...` message link |
-| `/accounts` | Switch / delete sessions |
-| `/exports` | List exported files |
-| `/help` | Show help |
-| `/quit` | Exit |
+Chat list on the left, conversation and composer on the right — both always visible.
+`Tab` walks the three panes; everything that is not a conversation (accounts, members,
+profile, exports, search results) opens as an overlay over the conversation pane.
+
+```
+┌ telegram-tui v4.1.0 ────────── Jubair @jubair · 3 accounts ─┐
+│ Chats (42)          │ Rakib                                 │
+│ · Saved Messages    │  14:01 Rakib                          │
+│ · Rakib          2  │    kal ashbi?                         │
+│ # Dev Group         │  14:02 You                            │
+│ @ Updates           │    ha, bikale                         │
+│                     ├───────────────────────────────────────┤
+│                     │ Message (Enter sends, Esc leaves)     │
+└─────────────────────┴───────────────────────────────────────┘
+```
 
 ## 🎹 Keys
 
-| Key | Action |
+Press `?` in the app for this table. Uppercase letters are separate bindings.
+
+| Where | Keys |
 | --- | --- |
-| `Esc` | Back |
-| `Ctrl+C` | Quit |
-| `j` / `k` · `↑` / `↓` | Move in lists |
-| `Enter` | Open / select |
-| `s` | Send |
-| `r` | Reply |
-| `e` | Export chat |
-| `m` | Export members |
-| `o` / `l` | Older / newer messages |
-| `f` | Search in chat |
-| `d` | Delete (type `DELETE` to confirm) |
-| `E` | Edit message |
-| `p` / `P` | Pin / unpin |
-| `v` | Members |
-| `g` | Download media of the selected message |
-| `M` | Mark read |
-| `R` | Refresh |
+| Chat list | `↑↓`/`jk` move · `Enter` open · `/` filter · `r` reload |
+| Conversation | `↑↓` move · `o` older · `Home` load older · `End` newest |
+| Write | `i` or `Enter` focus composer · `Enter` send · `Esc` back |
+| Message | `r` reply · `f` forward · `e` edit · `d` delete · `p`/`P` pin · `s` save media |
+| Find | `/` search this chat · `g` search everywhere · `m` mark read |
+| Send | `n` message someone · `u` send file · `w` note to self · `D` download link |
+| Chats | `J` join · `L` leave groups · `m` members · `R` report |
+| Export | `e` chats CSV · `M` members CSV · `X` chat history · `E` open exports |
+| Accounts | `a` accounts · `S` account status · `p` profile · `Ctrl+N` add account |
+| General | `Tab` switch pane · `Esc` cancel running work · `?` help · `q` quit |
+
+Destructive actions confirm first: delete asks you to type `DELETE` and shows the message
+preview plus the chat it lives in; leaving a group asks for `LEAVE`. Groups you created
+are refused. Member scrapes and history exports ask for a limit before they start.
 
 ## ⬇️ Downloads
 
 Two ways to grab media:
 
-- Select a message with media and press **`g`** — downloads to `~/.config/telegram-tui/downloads/`.
-- Paste any post link: **`/download https://t.me/c/123456789/42`** or `https://t.me/channel_name/42`.
+- Select a message with media and press **`s`** — downloads to `~/.config/telegram-tui/downloads/`.
+- Press **`D`** and paste any post link: `https://t.me/c/123456789/42` or `https://t.me/channel_name/42`.
 
 Public and **private** chats, groups and channels work, as long as your logged-in account is a member. File names are sanitized, duplicates get a unique suffix, and a progress toast shows while downloading.
 
@@ -196,7 +210,18 @@ Every `v*` tag triggers GitHub Actions to build and **auto-publish** all binarie
 ## 🧩 Project structure
 
 ```
-src/          Rust TUI client (grammers + ratatui)
+src/main.rs       entry point, terminal setup, event loop
+src/app.rs        state, async task queue, toasts
+src/actions.rs    every Telegram call the UI can start
+src/keys.rs       key dispatch by focus
+src/keys_modal.rs overlay and prompt keys
+src/submit.rs     prompt submission
+src/ui.rs         two-pane frame
+src/ui_overlay.rs overlay panels
+src/tg.rs         grammers wrapper
+src/config.rs     credentials, sessions, paths
+src/text.rs       display-width text helpers
+src/input.rs      cursor-aware text field
 go/bot/       Go Telegram Bot API service
 python/       Python export & analysis scripts
 .github/      Release automation (GitHub Actions)

@@ -152,7 +152,8 @@ jobs:
       - name: add installer
         run: |
           cp install.sh artifacts/install.sh
-          chmod +x artifacts/install.sh
+          cp uninstall.sh artifacts/uninstall.sh
+          chmod +x artifacts/install.sh artifacts/uninstall.sh
       - name: create release
         uses: softprops/action-gh-release@v2
         with:

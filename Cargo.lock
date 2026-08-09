@@ -2301,6 +2301,7 @@ dependencies = [
  "grammers-tl-types",
  "ratatui",
  "tokio",
+ "unicode-width",
 ]
 
 [[package]]

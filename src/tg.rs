@@ -1,5 +1,7 @@
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use grammers_client::client::{LoginToken, PasswordToken};
@@ -7,7 +9,7 @@ use grammers_client::media::Media;
 use grammers_client::message::Message;
 use grammers_client::peer::{Peer, User};
 use grammers_client::{Client, SignInError};
-use grammers_mtsender::{SenderPool, SenderPoolFatHandle};
+use grammers_mtsender::{InvocationError, SenderPool, SenderPoolFatHandle};
 use grammers_session::storages::SqliteSession;
 use grammers_session::types::PeerRef;
 use grammers_tl_types as tl;
@@ -105,6 +107,54 @@ pub async fn connect_session(path: &Path, api_id: i32) -> Result<ConnectedSessio
     })
 }
 
+/// Longest FLOOD_WAIT we sit through instead of reporting back to the user.
+const MAX_FLOOD_WAIT: u32 = 60;
+
+/// Seconds Telegram wants us to wait, when the error is a FLOOD_WAIT.
+pub fn flood_wait_secs(err: &InvocationError) -> Option<u32> {
+    match err {
+        InvocationError::Rpc(rpc) if rpc.name == "FLOOD_WAIT" => rpc.value,
+        _ => None,
+    }
+}
+
+/// Wait out a short FLOOD_WAIT so long operations survive rate limits.
+/// Returns false when the wait is too long to absorb silently.
+async fn absorb_flood(err: &InvocationError) -> bool {
+    match flood_wait_secs(err) {
+        Some(secs) if secs <= MAX_FLOOD_WAIT => {
+            tokio::time::sleep(Duration::from_secs(secs as u64 + 1)).await;
+            true
+        }
+        _ => false,
+    }
+}
+
+fn explain(err: InvocationError) -> anyhow::Error {
+    match flood_wait_secs(&err) {
+        Some(secs) => anyhow!("rate limited by Telegram, retry in {}s", secs),
+        None => anyhow!("{}", err),
+    }
+}
+
+/// Run a call, retrying once after a short FLOOD_WAIT.
+pub async fn retry_flood<T, F, Fut>(mut op: F) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = std::result::Result<T, InvocationError>>,
+{
+    match op().await {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            if absorb_flood(&e).await {
+                op().await.map_err(explain)
+            } else {
+                Err(explain(e))
+            }
+        }
+    }
+}
+
 pub async fn request_code(client: &Client, phone: &str, api_hash: &str) -> Result<LoginToken> {
     Ok(client.request_login_code(phone, api_hash).await?)
 }
@@ -142,6 +192,8 @@ pub struct MsgItem {
     pub time: String,
     pub text: String,
     pub outgoing: bool,
+    pub reply_to: Option<i32>,
+    pub media: Option<String>,
 }
 
 impl MsgItem {
@@ -154,8 +206,12 @@ impl MsgItem {
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "Unknown".to_string())
         };
+        let media = msg_media_info(msg).map(|i| format!("{} · {}", i.kind, human_size(i.size)));
         let text = if msg.text().is_empty() {
-            "[media/action]".to_string()
+            media
+                .clone()
+                .map(|m| format!("[{}]", m))
+                .unwrap_or_else(|| "[no text]".to_string())
         } else {
             msg.text().to_string()
         };
@@ -165,14 +221,32 @@ impl MsgItem {
             time: msg.date().format("%H:%M").to_string(),
             text,
             outgoing: msg.outgoing(),
+            reply_to: msg.reply_to_message_id(),
+            media,
         }
     }
 }
 
-pub async fn fetch_dialogs(client: &Client) -> Result<Vec<DialogItem>> {
+/// Advance an iterator, sitting through a short FLOOD_WAIT rather than aborting.
+macro_rules! next_tolerant {
+    ($iter:expr) => {{
+        match $iter.next().await {
+            Ok(v) => v,
+            Err(e) => {
+                if absorb_flood(&e).await {
+                    $iter.next().await.map_err(explain)?
+                } else {
+                    return Err(explain(e));
+                }
+            }
+        }
+    }};
+}
+
+pub async fn fetch_dialogs(client: &Client, limit: usize) -> Result<Vec<DialogItem>> {
     let mut iter = client.iter_dialogs();
     let mut out = Vec::new();
-    while let Some(dialog) = iter.next().await? {
+    while let Some(dialog) = next_tolerant!(iter) {
         let peer = dialog.peer().clone();
         let kind = match &peer {
             Peer::User(_) => "user",
@@ -204,6 +278,9 @@ pub async fn fetch_dialogs(client: &Client) -> Result<Vec<DialogItem>> {
             last,
             kind,
         });
+        if out.len() >= limit {
+            break;
+        }
     }
     Ok(out)
 }
@@ -323,6 +400,124 @@ pub async fn send_text(client: &Client, peer: &Peer, text: &str) -> Result<()> {
     let pref = peer_ref(peer).await?;
     client.send_message(pref, text).await?;
     Ok(())
+}
+
+pub async fn reply_to(client: &Client, peer: &Peer, msg_id: i32, text: &str) -> Result<()> {
+    use grammers_client::message::InputMessage;
+    let pref = peer_ref(peer).await?;
+    let msg = InputMessage::new().text(text).reply_to(Some(msg_id));
+    retry_flood(|| client.send_message(pref, msg.clone())).await?;
+    Ok(())
+}
+
+pub async fn forward(client: &Client, from: &Peer, ids: &[i32], to: &Peer) -> Result<usize> {
+    let src = peer_ref(from).await?;
+    let dst = peer_ref(to).await?;
+    let sent = retry_flood(|| client.forward_messages(dst, ids, src)).await?;
+    Ok(sent.into_iter().flatten().count())
+}
+
+/// Update first/last name and bio. Empty fields are left untouched.
+pub async fn update_profile(
+    client: &Client,
+    first: Option<&str>,
+    last: Option<&str>,
+    bio: Option<&str>,
+) -> Result<()> {
+    let req = tl::functions::account::UpdateProfile {
+        first_name: first.map(|s| s.to_string()),
+        last_name: last.map(|s| s.to_string()),
+        about: bio.map(|s| s.to_string()),
+    };
+    retry_flood(|| client.invoke(&req)).await?;
+    Ok(())
+}
+
+pub async fn update_username(client: &Client, username: &str) -> Result<()> {
+    let req = tl::functions::account::UpdateUsername {
+        username: username.trim().trim_start_matches('@').to_string(),
+    };
+    retry_flood(|| client.invoke(&req)).await?;
+    Ok(())
+}
+
+pub async fn set_profile_photo(client: &Client, path: &str) -> Result<()> {
+    let uploaded = client.upload_file(path).await?;
+    let req = tl::functions::photos::UploadProfilePhoto {
+        fallback: false,
+        bot: None,
+        file: Some(uploaded.raw),
+        video: None,
+        video_start_ts: None,
+        video_emoji_markup: None,
+    };
+    retry_flood(|| client.invoke(&req)).await?;
+    Ok(())
+}
+
+pub const REPORT_REASONS: &[(&str, &str)] = &[
+    ("spam", "Spam"),
+    ("violence", "Violence"),
+    ("porn", "Pornography"),
+    ("child", "Child abuse"),
+    ("copyright", "Copyright"),
+    ("fake", "Fake account"),
+    ("drugs", "Illegal drugs"),
+    ("other", "Other"),
+];
+
+fn report_reason(key: &str) -> tl::enums::ReportReason {
+    use tl::types::*;
+    match key {
+        "violence" => InputReportReasonViolence {}.into(),
+        "porn" => InputReportReasonPornography {}.into(),
+        "child" => InputReportReasonChildAbuse {}.into(),
+        "copyright" => InputReportReasonCopyright {}.into(),
+        "fake" => InputReportReasonFake {}.into(),
+        "drugs" => InputReportReasonIllegalDrugs {}.into(),
+        "other" => InputReportReasonOther {}.into(),
+        _ => InputReportReasonSpam {}.into(),
+    }
+}
+
+pub async fn report_peer(client: &Client, peer: &Peer, reason: &str, detail: &str) -> Result<()> {
+    let pref = peer_ref(peer).await?;
+    let req = tl::functions::account::ReportPeer {
+        peer: pref.into(),
+        reason: report_reason(reason),
+        message: detail.to_string(),
+    };
+    retry_flood(|| client.invoke(&req)).await?;
+    Ok(())
+}
+
+/// Leave a group or channel. Peers you created are refused, matching the
+/// Python tool's behaviour of never abandoning a chat you own.
+pub async fn leave_chat(client: &Client, peer: &Peer) -> Result<()> {
+    if let Peer::Channel(ch) = peer {
+        if ch.raw.creator {
+            return Err(anyhow!("you created this chat, leaving it is refused"));
+        }
+    }
+    let pref = peer_ref(peer).await?;
+    let req = tl::functions::channels::LeaveChannel {
+        channel: pref.into(),
+    };
+    retry_flood(|| client.invoke(&req)).await?;
+    Ok(())
+}
+
+/// Groups and channels the user is in but did not create.
+pub async fn leavable_chats(client: &Client, limit: usize) -> Result<Vec<DialogItem>> {
+    Ok(fetch_dialogs(client, limit)
+        .await?
+        .into_iter()
+        .filter(|d| match &d.peer {
+            Peer::Channel(ch) => !ch.raw.creator,
+            Peer::Group(_) => true,
+            Peer::User(_) => false,
+        })
+        .collect())
 }
 
 pub async fn send_to_self(client: &Client, text: &str) -> Result<()> {
@@ -612,9 +807,10 @@ fn csv_field(s: &str) -> String {
 
 pub async fn export_dialogs(client: &Client, path: &Path) -> Result<usize> {
     let mut iter = client.iter_dialogs();
-    let mut out = String::from("id,name,type,unread,last\n");
+    let mut out = BufWriter::new(std::fs::File::create(path)?);
+    writeln!(out, "id,name,type,unread,last")?;
     let mut count = 0usize;
-    while let Some(dialog) = iter.next().await? {
+    while let Some(dialog) = next_tolerant!(iter) {
         count += 1;
         let peer = dialog.peer();
         let kind = match peer {
@@ -627,16 +823,17 @@ pub async fn export_dialogs(client: &Client, path: &Path) -> Result<usize> {
             tl::enums::Dialog::Dialog(d) => d.unread_count,
             _ => 0,
         };
-        out.push_str(&format!(
-            "{},{},{},{},{}\n",
+        writeln!(
+            out,
+            "{},{},{},{},{}",
             peer.id().bot_api_dialog_id().unwrap_or_default(),
             csv_field(peer.name().unwrap_or("Unknown")),
             kind,
             unread,
             csv_field(&last.replace('\n', " ")),
-        ));
+        )?;
     }
-    std::fs::write(path, out)?;
+    out.flush()?;
     Ok(count)
 }
 
@@ -649,11 +846,14 @@ pub struct MemberItem {
     pub phone: Option<String>,
 }
 
-pub async fn fetch_members(client: &Client, peer: &Peer) -> Result<Vec<MemberItem>> {
+/// Telegram throttles participant walks hard, so pace them like the Python tool did.
+const MEMBER_THROTTLE: Duration = Duration::from_millis(50);
+
+pub async fn fetch_members(client: &Client, peer: &Peer, limit: usize) -> Result<Vec<MemberItem>> {
     let pref = peer_ref(peer).await?;
     let mut iter = client.iter_participants(pref);
     let mut out = Vec::new();
-    while let Some(participant) = iter.next().await? {
+    while let Some(participant) = next_tolerant!(iter) {
         let user = &participant.user;
         out.push(MemberItem {
             id: user.id().bot_api_dialog_id().unwrap_or_default(),
@@ -662,28 +862,43 @@ pub async fn fetch_members(client: &Client, peer: &Peer) -> Result<Vec<MemberIte
             last: user.last_name().unwrap_or("").to_string(),
             phone: user.phone().map(|s| s.to_string()),
         });
+        if out.len() >= limit {
+            break;
+        }
+        tokio::time::sleep(MEMBER_THROTTLE).await;
     }
     Ok(out)
 }
 
-pub async fn export_members(client: &Client, peer: &Peer, path: &Path) -> Result<usize> {
+pub async fn export_members(
+    client: &Client,
+    peer: &Peer,
+    path: &Path,
+    limit: usize,
+) -> Result<usize> {
     let pref = peer_ref(peer).await?;
     let mut iter = client.iter_participants(pref);
-    let mut out = String::from("user_id,username,first_name,last_name,phone\n");
+    let mut out = BufWriter::new(std::fs::File::create(path)?);
+    writeln!(out, "user_id,username,first_name,last_name,phone")?;
     let mut count = 0usize;
-    while let Some(participant) = iter.next().await? {
+    while let Some(participant) = next_tolerant!(iter) {
         count += 1;
         let user = &participant.user;
-        out.push_str(&format!(
-            "{},{},{},{},{}\n",
+        writeln!(
+            out,
+            "{},{},{},{},{}",
             user.id().bot_api_dialog_id().unwrap_or_default(),
             csv_field(user.username().unwrap_or("")),
             csv_field(user.first_name().unwrap_or("")),
             csv_field(user.last_name().unwrap_or("")),
             csv_field(user.phone().unwrap_or("")),
-        ));
+        )?;
+        if count >= limit {
+            break;
+        }
+        tokio::time::sleep(MEMBER_THROTTLE).await;
     }
-    std::fs::write(path, out)?;
+    out.flush()?;
     Ok(count)
 }
 
@@ -695,9 +910,9 @@ pub async fn export_chat(
 ) -> Result<usize> {
     let pref = peer_ref(peer).await?;
     let mut iter = client.iter_messages(pref);
-    let mut out = String::new();
+    let mut out = BufWriter::new(std::fs::File::create(path)?);
     let mut count = 0usize;
-    while let Some(msg) = iter.next().await? {
+    while let Some(msg) = next_tolerant!(iter) {
         if count >= limit {
             break;
         }
@@ -709,16 +924,55 @@ pub async fn export_chat(
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "Unknown".to_string())
         };
-        out.push_str(&format!(
-            "[{}] {}: {}\n",
+        writeln!(
+            out,
+            "[{}] {}: {}",
             msg.date().format("%Y-%m-%d %H:%M"),
             sender,
-            msg.text()
-        ));
+            escape_lines(msg.text())
+        )?;
         count += 1;
     }
-    std::fs::write(path, out)?;
+    out.flush()?;
     Ok(count)
+}
+
+/// Keep one message on one line so the export stays greppable.
+fn escape_lines(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\n', "\\n").replace('\r', "")
+}
+
+#[derive(Clone)]
+pub struct AccountStatus {
+    pub session: String,
+    pub me: Option<Me>,
+    pub error: Option<String>,
+}
+
+/// Connect each stored session just long enough to read who it belongs to.
+pub async fn account_status(paths: Vec<(String, PathBuf)>, api_id: i32) -> Vec<AccountStatus> {
+    let mut out = Vec::new();
+    for (session, path) in paths {
+        match connect_session(&path, api_id).await {
+            Ok(sess) => {
+                let me = sess.me.clone();
+                let authorized = sess.authorized;
+                sess.handle.quit();
+                sess.runner.abort();
+                out.push(AccountStatus {
+                    session,
+                    me,
+                    error: (!authorized).then(|| "not authorized".to_string()),
+                });
+            }
+            Err(e) => out.push(AccountStatus {
+                session,
+                me: None,
+                error: Some(e.to_string()),
+            }),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -775,6 +1029,44 @@ mod tests {
         assert_eq!(ext_for_mime("audio/mpeg"), ".mp3");
         assert_eq!(ext_for_mime("image/jpeg"), ".jpg");
         assert_eq!(ext_for_mime("application/x-whatever"), "");
+    }
+
+    #[test]
+    fn escapes_newlines_for_one_line_exports() {
+        assert_eq!(escape_lines("a\nb"), "a\\nb");
+        assert_eq!(escape_lines("a\\b"), "a\\\\b");
+        assert_eq!(escape_lines("a\r\nb"), "a\\nb");
+        assert!(!escape_lines("multi\nline\ntext").contains('\n'));
+    }
+
+    #[test]
+    fn flood_wait_is_recognised_by_name() {
+        let flood = InvocationError::Rpc(grammers_mtsender::RpcError {
+            code: 420,
+            name: "FLOOD_WAIT".to_string(),
+            value: Some(31),
+            caused_by: None,
+        });
+        assert_eq!(flood_wait_secs(&flood), Some(31));
+
+        let other = InvocationError::Rpc(grammers_mtsender::RpcError {
+            code: 400,
+            name: "PHONE_CODE_INVALID".to_string(),
+            value: None,
+            caused_by: None,
+        });
+        assert_eq!(flood_wait_secs(&other), None);
+    }
+
+    #[test]
+    fn report_reasons_all_map_to_a_variant() {
+        for (key, _) in REPORT_REASONS {
+            let _ = report_reason(key);
+        }
+        assert!(matches!(
+            report_reason("unknown-key"),
+            tl::enums::ReportReason::InputReportReasonSpam
+        ));
     }
 
     #[test]

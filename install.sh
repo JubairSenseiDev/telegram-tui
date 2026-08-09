@@ -1,10 +1,63 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # One-line installer for telegram-tui.
 #   curl -fsSL https://raw.githubusercontent.com/JubairSenseiDev/telegram-tui/main/install.sh | sh
-set -euo pipefail
+# POSIX sh: the documented entry point pipes into `sh`, which is dash on
+# Debian and Termux, so no bashisms (pipefail, $'..', arrays, local).
+set -eu
 
 REPO="JubairSenseiDev/telegram-tui"
 BASE="https://github.com/$REPO/releases/latest/download"
+
+# --- presentation -----------------------------------------------------------
+# Animation only when stderr is a terminal, so `curl | sh` in a log stays plain.
+if [ -t 2 ] && [ -z "${NO_COLOR:-}" ]; then
+  ESC=$(printf '\033')
+  C_RESET="${ESC}[0m"; C_DIM="${ESC}[2m"; C_CYAN="${ESC}[36m"
+  C_GREEN="${ESC}[32m"; C_RED="${ESC}[31m"; C_BOLD="${ESC}[1m"
+  TTY=1
+else
+  C_RESET=""; C_DIM=""; C_CYAN=""; C_GREEN=""; C_RED=""; C_BOLD=""
+  TTY=0
+fi
+
+hide_cursor() { [ "$TTY" = 1 ] && printf '\033[?25l' >&2 || true; }
+show_cursor() { [ "$TTY" = 1 ] && printf '\033[?25h' >&2 || true; }
+
+banner() {
+  [ "$TTY" = 1 ] || return 0
+  printf '%s\n' "" >&2
+  printf '%s\n' "  ${C_CYAN}${C_BOLD}telegram-tui${C_RESET}  ${C_DIM}terminal Telegram client${C_RESET}" >&2
+  printf '%s\n' "  ${C_DIM}────────────────────────────────────${C_RESET}" >&2
+}
+
+step() { printf '  %s→%s %s\n' "$C_CYAN" "$C_RESET" "$1" >&2; }
+ok()   { printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "$1" >&2; }
+die()  { printf '  %s✗%s %s\n' "$C_RED" "$C_RESET" "$1" >&2; exit 1; }
+
+# Run a command with a spinner. Returns the command's own exit code.
+spin() {
+  label="$1"; shift
+  if [ "$TTY" != 1 ]; then
+    printf '==> %s\n' "$label" >&2
+    "$@"
+    return $?
+  fi
+  "$@" & pid=$!
+  hide_cursor
+  while kill -0 "$pid" 2>/dev/null; do
+    # Positional params keep each frame whole; `cut -c` would split UTF-8 bytes.
+    set -- '⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏'
+    for frame in "$@"; do
+      kill -0 "$pid" 2>/dev/null || break
+      printf '\r  %s%s%s %s' "$C_CYAN" "$frame" "$C_RESET" "$label" >&2
+      sleep 0.08
+    done
+  done
+  wait "$pid"; rc=$?
+  printf '\r\033[2K' >&2
+  show_cursor
+  return $rc
+}
 
 # --- detect os / arch -------------------------------------------------------
 os="$(uname -s)"
@@ -46,25 +99,31 @@ fi
 BIN="$DIR/telegram-tui"
 URL="$BASE/telegram-tui-$suffix"
 
-echo "==> downloading telegram-tui ($suffix)"
+banner
+step "detecting platform: ${C_BOLD}${suffix}${C_RESET}"
+
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
-curl -fsSL "$URL" -o "$TMP/telegram-tui"
+trap 'rm -rf "$TMP"; show_cursor' EXIT INT TERM
+spin "downloading telegram-tui ($suffix)" curl -fsSL "$URL" -o "$TMP/telegram-tui" \
+  || die "download failed (curl -fsSL \"$URL\")"
+ok "downloaded $suffix binary"
 
 # --- verify sha256 if published ---------------------------------------------
 if curl -fsSL "$URL.sha256" -o "$TMP/telegram-tui.sha256" 2>/dev/null; then
   expected="$(awk 'NR==1{print $1}' "$TMP/telegram-tui.sha256")"
   actual="$(sha256sum "$TMP/telegram-tui" | awk '{print $1}')"
   [ -n "$expected" ] && [ "$actual" = "$expected" ] \
-    || { echo "error: checksum mismatch" >&2; exit 1; }
+    || die "checksum mismatch (expected $expected, got $actual)"
+  ok "checksum verified"
 fi
 
 mkdir -p "$DIR"
 chmod +x "$TMP/telegram-tui"
 mv -f "$TMP/telegram-tui" "$BIN"
 
-echo "==> installed: $BIN"
+ok "installed: ${C_BOLD}$BIN${C_RESET}"
 case ":$PATH:" in
   *":$DIR:"*) ;;
-  *) echo "==> note: add $DIR to your PATH to run 'telegram-tui'" ;;
+  *) printf '  %snote:%s add %s to your PATH to run %s\n' "$C_DIM" "$C_RESET" "$DIR" "'telegram-tui'" >&2 ;;
 esac
+printf '%s\n' "  ${C_GREEN}${C_BOLD}done.${C_RESET}" >&2

@@ -3,6 +3,7 @@
 __pycache__/
 *.py[cod]
 *.session
+old_example.py
 *.session-journal
 sessions/
 exports/
