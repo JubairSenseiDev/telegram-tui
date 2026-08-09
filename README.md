@@ -115,7 +115,7 @@ Chat list on the left, conversation and composer on the right — both always vi
 profile, exports, search results) opens as an overlay over the conversation pane.
 
 ```
-┌ telegram-tui v4.1.0 ────────── Jubair @jubair · 3 accounts ─┐
+┌ telegram-tui v4.2.0 ────────── Jubair @jubair · 3 accounts ─┐
 │ Chats (42)          │ Rakib                                 │
 │ · Saved Messages    │  14:01 Rakib                          │
 │ · Rakib          2  │    kal ashbi?                         │

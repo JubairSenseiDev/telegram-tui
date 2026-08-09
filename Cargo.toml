@@ -1,8 +1,8 @@
 [package]
 name = "telegram-tui"
-version = "4.1.0"
+version = "4.2.0"
 edition = "2021"
-description = "A keyboard-first Telegram TUI for Termux and Linux (MovieBox-style)."
+description = "A keyboard-first Telegram TUI for Termux and Linux."
 license = "MIT"
 repository = "https://github.com/JubairSenseiDev/telegram-tui"
 keywords = ["telegram", "tui", "termux", "cli", "mtproto"]
